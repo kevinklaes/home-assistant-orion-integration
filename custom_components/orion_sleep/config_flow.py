@@ -26,8 +26,10 @@ from .const import (
     CONF_INSIGHTS_DAYS,
     CONF_REFRESH_TOKEN,
     CONF_SCAN_INTERVAL,
+    CONF_ZONE_LEFT,
     DEFAULT_INSIGHTS_DAYS,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_ZONE_LEFT,
     DOMAIN,
 )
 
@@ -292,6 +294,9 @@ class OrionSleepOptionsFlow(OptionsFlow):
         current_insights_days = self._config_entry.options.get(
             CONF_INSIGHTS_DAYS, DEFAULT_INSIGHTS_DAYS
         )
+        current_zone_left = self._config_entry.options.get(
+            CONF_ZONE_LEFT, DEFAULT_ZONE_LEFT
+        )
 
         return self.async_show_form(
             step_id="init",
@@ -303,6 +308,9 @@ class OrionSleepOptionsFlow(OptionsFlow):
                     vol.Required(
                         CONF_INSIGHTS_DAYS, default=current_insights_days
                     ): vol.All(vol.Coerce(int), vol.Range(min=1, max=30)),
+                    vol.Required(
+                        CONF_ZONE_LEFT, default=current_zone_left
+                    ): vol.In({"zone_a": "Zone A", "zone_b": "Zone B"}),
                 }
             ),
         )

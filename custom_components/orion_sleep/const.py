@@ -30,6 +30,10 @@ DEFAULT_SCAN_INTERVAL = 600  # 10 minutes
 CONF_INSIGHTS_DAYS = "insights_days"
 DEFAULT_INSIGHTS_DAYS = 7
 
+# Zone-to-side mapping (options flow)
+CONF_ZONE_LEFT = "zone_left"
+DEFAULT_ZONE_LEFT = "zone_a"  # zone_a is left by default; swap via options if needed
+
 # The Orion app displays temperature as a relative offset (-10 to +10).
 # The mapping between offset and absolute Celsius is NON-LINEAR and comes
 # from the device's temperature_scale.relative[] lookup table.

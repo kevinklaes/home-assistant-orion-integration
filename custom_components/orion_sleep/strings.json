@@ -52,7 +52,11 @@
         "title": "Orion Sleep Options",
         "data": {
           "scan_interval": "Polling interval (seconds)",
-          "insights_days": "Days of sleep insights to fetch"
+          "insights_days": "Days of sleep insights to fetch",
+          "zone_left": "Left side zone"
+        },
+        "data_description": {
+          "zone_left": "Which physical zone is on the left side of the bed. Change this if left and right entities are swapped."
         }
       }
     }
