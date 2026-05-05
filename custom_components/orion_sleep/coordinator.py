@@ -182,6 +182,30 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
                 return sessions[-1]
         return None
 
+    def get_latest_session_for_zone(self, zone_id: str) -> dict | None:
+        """Get the most recent sleep session for a specific zone from insights."""
+        insights = (self.data or {}).get("insights", {})
+        insights_data = insights.get("data", {})
+        if not insights_data:
+            return None
+
+        for date_key in sorted(insights_data.keys(), reverse=True):
+            sessions = insights_data[date_key].get("sessions", [])
+            for session in reversed(sessions):
+                if session.get("zone_id") == zone_id:
+                    return session
+        return None
+
+    def get_zone_live(self, device_id: str, zone_id: str) -> dict | None:
+        """Return the live state dict for a specific zone, or None."""
+        live = self.live_devices.get(device_id)
+        if not live:
+            return None
+        for zone in live.get("zones", []):
+            if zone.get("id") == zone_id:
+                return zone
+        return None
+
     def get_today_schedule(self) -> dict | None:
         """Get today's sleep schedule for the current user."""
         schedules = (self.data or {}).get("schedules", {})
