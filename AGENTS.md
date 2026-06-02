@@ -54,8 +54,8 @@ https://api1.orionbed.com
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
 | POST | `/v1/auth/code` | No | Send verification code to email/phone |
-| POST | `/v1/auth/verify` | No | Verify code, get tokens. Response nested: `response.session.{access_token, refresh_token, expires_at}` |
-| POST | `/v1/auth/refresh` | No | Refresh tokens. Body: `{"refresh_token": "..."}`. Response may be nested or top-level. |
+| POST | `/v1/auth/do` **or** `/v1/auth/verify` | No | Verify code, get tokens. The spec now documents `/v1/auth/do` (from Android bytecode); the previously live-verified endpoint was `/v1/auth/verify`. Code tries `/v1/auth/do` first and falls back to `/v1/auth/verify`. Response handled in all known shapes — see `_extract_tokens`. |
+| POST | `/v1/auth/refresh` | No | Refresh tokens. Body sends both `refreshToken` (current spec) and `refresh_token` (legacy) so the request works regardless of which key the live API requires. Response handled by `_extract_tokens`. |
 | GET | `/v1/auth/me` | Bearer | User profile. Wrapped in `{"response": {...}, "success": true}` |
 | GET | `/v1/devices` | Bearer | Devices at `response.devices[]`. Fields: `id`, `serial_number`, `name`, `model`, `zones[]`, `temperature_range`, `temperature_scale` |
 | GET | `/v1/sleep-schedules` | Bearer | Schedules at `response.schedules.{user_id}[]` (7 days). Also `today_sleep_schedule.{user_id}` |
@@ -108,8 +108,9 @@ https://api1.orionbed.com
 
 ### Key Gotchas
 
-- Token fields are **snake_case** (`access_token`, NOT `accessToken`)
-- Refresh response may be nested (`response.session`) or flat — handle both
+- Token fields were **snake_case** (`access_token`) when verified against the live API, but the current OpenAPI spec (from Android bytecode) shows **camelCase** (`accessToken`). `_extract_tokens` in `api.py` handles all three known shapes: nested-snake, flat-camelCase, flat-snake.
+- The auth verification endpoint was `/v1/auth/verify` when live-verified; the spec now says `/v1/auth/do`. Code tries both.
+- Refresh request body similarly sends both `refreshToken` (spec) and `refresh_token` (legacy) keys.
 - Token expiry uses `expires_at` Unix timestamp, NOT JWT parsing
 - Insights endpoint (`/v2/insights`) does NOT wrap in `response` — it's top-level
 - All other endpoints wrap data in `{"response": {...}, "success": true}`
@@ -232,7 +233,9 @@ Entities read from coordinator:
 ### Token Management
 - `_token_expired(margin_seconds=60)` — checks `time.time() + 60` against `expires_at`
 - `ensure_valid_token()` — auto-refreshes if expired
-- `_refresh_tokens()` — handles both nested (`response.session`) and flat response shapes
+- `_extract_tokens(data)` — static helper; normalises token response from nested-snake, flat-camelCase, or flat-snake shapes
+- `_refresh_tokens()` — sends both `refreshToken` and `refresh_token` body keys; parses response via `_extract_tokens`
+- `verify_auth_code()` — tries `/v1/auth/do` then `/v1/auth/verify`; parses response via `_extract_tokens`
 - `set_token_refresh_callback(callback)` — called after successful refresh to persist tokens
 
 ### Action Methods
