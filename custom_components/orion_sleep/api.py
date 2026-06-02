@@ -168,14 +168,21 @@ class OrionApiClient:
 
         last_err: Exception | None = None
         for path in ("/v1/auth/do", "/v1/auth/verify"):
+            _LOGGER.debug("Orion auth: trying %s", path)
             try:
                 data = await self._request(
                     "POST", path, with_auth=False, json_data=body
                 )
                 tokens = self._extract_tokens(data)
                 if tokens:
+                    _LOGGER.debug("Orion auth: succeeded via %s", path)
                     return tokens
                 # Got 200 but unrecognised shape — try the next endpoint.
+                _LOGGER.debug(
+                    "Orion auth: %s returned 200 but unrecognised shape (keys: %s); trying next",
+                    path,
+                    list(data.keys()),
+                )
                 last_err = OrionAuthError(
                     f"Unexpected auth response shape from {path}: {data}"
                 )
@@ -183,6 +190,7 @@ class OrionApiClient:
                 raise
             except OrionApiError as err:
                 # Non-auth API error (e.g. 404 endpoint gone) — try next.
+                _LOGGER.debug("Orion auth: %s failed (%s); trying next endpoint", path, err)
                 last_err = err
 
         raise OrionAuthError(
@@ -211,6 +219,7 @@ class OrionApiClient:
         if not self._refresh_token:
             raise OrionAuthError("No refresh token available")
 
+        _LOGGER.debug("Orion: refreshing access token")
         data = await self._request(
             "POST",
             "/v1/auth/refresh",
@@ -223,11 +232,17 @@ class OrionApiClient:
 
         tokens = self._extract_tokens(data)
         if not tokens:
+            _LOGGER.warning(
+                "Orion token refresh: response did not contain recognised token fields "
+                "(top-level keys: %s) — re-authentication is likely required",
+                list(data.keys()),
+            )
             raise OrionAuthError(f"Unexpected refresh response shape: {data}")
 
         self._access_token = tokens["access_token"]
         self._refresh_token = tokens["refresh_token"]
         self._expires_at = tokens.get("expires_at", 0)
+        _LOGGER.debug("Orion: token refreshed successfully")
 
         if self._token_refresh_callback:
             self._token_refresh_callback(

@@ -88,6 +88,11 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         try:
             await self.api_client.ensure_valid_token()
         except OrionAuthError as err:
+            _LOGGER.error(
+                "Orion authentication failed during token refresh — "
+                "re-authentication required: %s",
+                err,
+            )
             raise ConfigEntryAuthFailed(str(err)) from err
         except (OrionApiError, OrionConnectionError) as err:
             raise UpdateFailed(f"Error refreshing token: {err}") from err
