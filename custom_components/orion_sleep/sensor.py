@@ -355,7 +355,6 @@ async def async_setup_entry(
                 OrionScheduleSensorEntity(coordinator, device_id, description)
             )
         entities.append(OrionCurrentTempOffsetSensor(coordinator, device_id))
-        entities.append(OrionCurrentTempOffsetSensor(coordinator, device_id))
         entities.append(OrionWebSocketStateSensor(coordinator, device_id))
         for sensor_name in _TOPPER_SENSORS:
             entities.append(

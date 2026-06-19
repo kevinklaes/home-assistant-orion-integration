@@ -194,7 +194,7 @@ Entities read from coordinator:
 | Sensor | Schedule Duration | `_schedule_duration` | Calculated from bedtime/wakeup (handles overnight) |
 | Sensor | Bedtime Temperature | `_bedtime_temp` | `today_sleep_schedule.bedtime_temp` + phase/smart temp extra attrs |
 | Sensor | Wake-up Temperature | `_wakeup_temp` | `today_sleep_schedule.wakeup_temp` |
-| Sensor | Current Temp Offset | `_current_temp_offset` | Latest session `temperature.values[-1]` converted to app-style offset. **Registered twice (pre-existing bug), see Known Issues.** |
+| Sensor | Current Temp Offset | `_current_temp_offset` | Latest session `temperature.values[-1]` converted to app-style offset. |
 | Sensor (diag) | Live Connection | `_websocket_state` | WS connection state (`connecting`/`connected`/`reconnecting`/`device_offline`/`auth_failed`/`stopped`) plus `seconds_since_last_message` extra attr |
 | Sensor | Sensor 1/2 Heart Rate | `_sensorN_live_heart_rate` | WS `status.sensors.sensorN.heart_rate` (bpm). `0` (empty bed) and `255` (no reading yet) both mapped to `None`. |
 | Sensor | Sensor 1/2 Breath Rate | `_sensorN_live_breath_rate` | WS `status.sensors.sensorN.breath_rate` (br/min). Same sentinel handling. |
@@ -211,7 +211,7 @@ Entities read from coordinator:
 
 **Per device: 1 climate + 4 number + 24 sensors + 3 binary sensors + 3 switches = 35 entities**
 
-- 24 sensors = 11 insights + 5 schedule + 1 current-temp-offset + 1 live-connection + 6 per-sensor live (2× HR + 2× BR + 2× diag status_text). The current-temp-offset is accidentally registered twice (same unique_id, HA keeps one) — the 24 count reflects the logical set.
+- 24 sensors = 11 insights + 5 schedule + 1 current-temp-offset + 1 live-connection + 6 per-sensor live (2× HR + 2× BR + 2× diag status_text).
 - 4 number sliders: one per schedule-phase temperature offset (bedtime / phase_1 / phase_2 / wakeup).
 - 3 binary sensors: Sleep Session Active + 2× On Bed (sensor1/sensor2).
 - 3 switches: Power, Away Mode, Sleep Schedule.
@@ -340,14 +340,13 @@ Notable:
 
 ## Known Issues
 
-- **Duplicate entity**: `OrionCurrentTempOffsetSensor` is appended twice per device in `sensor.py:351-352` (same `unique_id`, HA will reject or warn about the second)
 - **Unused translations**: `bed_climate_left` and `bed_climate_right` defined in strings.json but no entities use them
 
 ## Known Limitations / Future Work
 
 - `set_temperature` endpoint not verified against live API
 - Schedule enable/disable (`PUT /v1/sleep-schedules?action=enable`) not verified
-- `async_set_hvac_mode(OFF)` and `async_turn_off()` on climate entity are no-ops (schedule-based control only)
+- `async_set_hvac_mode(OFF)` turns the zone off immediately; it does not disable the schedule, so the device may turn itself back on at the next scheduled bedtime
 - Firmware versions are not exposed as dedicated entities yet (available in the WS payload at `status.firmware.{cb,ib}` and on each sensor block's `firmware_version` — plumb through if surfacing them becomes useful)
 - HRV values frequently null in real data
 - No way to start/stop sleep sessions via API

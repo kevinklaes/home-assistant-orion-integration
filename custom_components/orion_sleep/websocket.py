@@ -23,6 +23,7 @@ This module implements one WS connection per device, with:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import ssl
 import time
@@ -327,8 +328,6 @@ class OrionWebSocketClient:
         """Parse and dispatch one text frame."""
         self._last_message_at = time.monotonic()
         try:
-            import json
-
             parsed = json.loads(data)
         except ValueError:
             _LOGGER.debug(

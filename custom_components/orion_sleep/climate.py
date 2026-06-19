@@ -91,12 +91,16 @@ class OrionZoneClimate(OrionBaseEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        """Return the current bed temperature from the latest zone insights session."""
-        session = self.coordinator.get_latest_session_for_zone(self._zone_id)
-        if not session:
+        """Return the current measured bed temperature from the live WS snapshot.
+
+        Reads ``status.zones[].temp`` (what the hardware actually measures)
+        rather than the insights session data, which can be hours old.
+        """
+        zone = self.coordinator.get_zone_measured(self._device_id, self._zone_id)
+        if zone is None:
             return None
-        values = session.get("temperature", {}).get("values", [])
-        return values[-1] if values else None
+        temp = zone.get("temp")
+        return float(temp) if temp is not None else None
 
     @property
     def target_temperature(self) -> float | None:
