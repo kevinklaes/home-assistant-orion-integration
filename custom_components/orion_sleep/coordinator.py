@@ -202,11 +202,31 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         return None
 
     def get_zone_live(self, device_id: str, zone_id: str) -> dict | None:
-        """Return the live state dict for a specific zone, or None."""
+        """Return the live setpoint dict for a specific zone, or None.
+
+        Reads from ``payload.zones[]`` (user intent: on/temp setpoints).
+        For the measured temperature and thermal state, use
+        ``get_zone_measured`` instead.
+        """
         live = self.live_devices.get(device_id)
         if not live:
             return None
         for zone in live.get("zones", []):
+            if zone.get("id") == zone_id:
+                return zone
+        return None
+
+    def get_zone_measured(self, device_id: str, zone_id: str) -> dict | None:
+        """Return the measured zone state dict for a specific zone, or None.
+
+        Reads from ``payload.status.zones[]`` (what the hardware actually
+        measures: temp in °C and thermal_state). Distinct from the setpoint
+        returned by ``get_zone_live``.
+        """
+        live = self.live_devices.get(device_id)
+        if not live:
+            return None
+        for zone in (live.get("status") or {}).get("zones", []):
             if zone.get("id") == zone_id:
                 return zone
         return None
