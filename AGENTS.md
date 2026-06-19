@@ -177,7 +177,7 @@ Entities read from coordinator:
 
 | Platform | Entity | Key / unique_id suffix | Data Source |
 |----------|--------|----------------------|-------------|
-| Climate | Bed Climate | `_climate` | Target temp from `today_sleep_schedule.bedtime_temp`, current from latest session `temperature.values[-1]` |
+| Climate | Bed Climate | `_climate` | Target temp from live setpoint `zones[].temp`; current temp from live measured `status.zones[].temp` (WS, ~2s) |
 | Sensor | Sleep Score | `_sleep_score` | `insights.overview.{latest_date}.score` with `quality_rating` extra attr |
 | Sensor | Total Sleep Time | `_total_sleep_time` | `session.sleep_summary.time_asleep` (formatted as "Xh Ym") |
 | Sensor | Deep Sleep Time | `_deep_sleep_time` | `session.sleep_summary.deep_sleep` |
@@ -199,6 +199,8 @@ Entities read from coordinator:
 | Sensor | Sensor 1/2 Heart Rate | `_sensorN_live_heart_rate` | WS `status.sensors.sensorN.heart_rate` (bpm). `0` (empty bed) and `255` (no reading yet) both mapped to `None`. |
 | Sensor | Sensor 1/2 Breath Rate | `_sensorN_live_breath_rate` | WS `status.sensors.sensorN.breath_rate` (br/min). Same sentinel handling. |
 | Sensor (diag) | Sensor 1/2 Status | `_sensorN_sensor_status` | Raw `status_text`: observed `left_bed` (empty) and `normal` (occupied). |
+| Sensor | Left/Right Bed Temperature | `_{zone_id}_measured_temp` | `status.zones[].temp` from WS — actual measured bed temp in °C, updated every ~2s. `thermal_state` exposed as extra attribute. |
+| Sensor | Left/Right Thermal State | `_{zone_id}_thermal_state` | `status.zones[].thermal_state` from WS — `standby` observed; `heating`/`cooling` expected but unconfirmed. |
 | Binary Sensor | Sleep Session Active | `_session_active` | `session.is_in_progress` (shows "Asleep" / "Not asleep") |
 | Binary Sensor | Sensor 1/2 On Bed | `_sensorN_on_bed` | Occupancy device class. `status_text != "left_bed"`. The WS push itself is realtime, but the topper takes ~30s–1min to decide someone has sat down or left, so `status_text` transitions lag the real event. |
 | Switch | Power | `_power` | On = all zones on, Off = all zones off. Uses `PUT /v1/devices/{id}/live` (canonical power primitive). State read from each zone's `on`/`is_on` field. |
@@ -209,9 +211,9 @@ Entities read from coordinator:
 | Number | Asleep Phase 2 Offset | `_phase_2_temp_offset` | As above, `phase_2_temp` field. |
 | Number | Wake Up Temperature Offset | `_wakeup_temp_offset` | As above, `wakeup_temp` field. |
 
-**Per device: 1 climate + 4 number + 24 sensors + 3 binary sensors + 3 switches = 35 entities**
+**Per device: 1 climate + 4 number + 28 sensors + 3 binary sensors + 3 switches = 39 entities**
 
-- 24 sensors = 11 insights + 5 schedule + 1 current-temp-offset + 1 live-connection + 6 per-sensor live (2× HR + 2× BR + 2× diag status_text).
+- 28 sensors = 11 insights + 5 schedule + 1 current-temp-offset + 1 live-connection + 6 per-sensor live (2× HR + 2× BR + 2× diag status_text) + 4 zone live (2× measured temp + 2× thermal state).
 - 4 number sliders: one per schedule-phase temperature offset (bedtime / phase_1 / phase_2 / wakeup).
 - 3 binary sensors: Sleep Session Active + 2× On Bed (sensor1/sensor2).
 - 3 switches: Power, Away Mode, Sleep Schedule.

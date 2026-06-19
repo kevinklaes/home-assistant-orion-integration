@@ -8,15 +8,18 @@ import logging
 from typing import Any
 
 from homeassistant.components.sensor import (
+    SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .const import CONF_ZONE_LEFT, DEFAULT_ZONE_LEFT
 from .coordinator import OrionDataUpdateCoordinator
 from .entity import OrionBaseEntity
 
@@ -342,6 +345,11 @@ async def async_setup_entry(
 ) -> None:
     """Set up Orion Sleep sensor entities."""
     coordinator: OrionDataUpdateCoordinator = entry.runtime_data
+
+    zone_left = entry.options.get(CONF_ZONE_LEFT, DEFAULT_ZONE_LEFT)
+    zone_right = "zone_b" if zone_left == "zone_a" else "zone_a"
+    zone_sides = [(zone_left, "left"), (zone_right, "right")]
+
     entities: list[SensorEntity] = []
 
     for device in coordinator.devices:
@@ -365,6 +373,13 @@ async def async_setup_entry(
             )
             entities.append(
                 OrionSensorStatusTextSensor(coordinator, device_id, sensor_name)
+            )
+        for zone_id, side in zone_sides:
+            entities.append(
+                OrionMeasuredZoneTempSensor(coordinator, device_id, zone_id, side)
+            )
+            entities.append(
+                OrionZoneThermalStateSensor(coordinator, device_id, zone_id, side)
             )
 
     async_add_entities(entities)
@@ -653,3 +668,84 @@ class OrionSensorStatusTextSensor(_OrionLiveSensorBase):
     @property
     def native_value(self) -> str | None:
         return self.coordinator.sensor_status_text(self._device_id, self._sensor_name)
+
+
+class OrionMeasuredZoneTempSensor(OrionBaseEntity, SensorEntity):
+    """Real-time measured bed temperature for one zone from the WS stream.
+
+    Reads ``status.zones[].temp`` from the live_device payload — the actual
+    temperature the hardware measures, updated every ~2s via WebSocket.
+    Distinct from the zone setpoint (``zones[].temp``) returned by
+    ``get_zone_live()``.
+    """
+
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:thermometer"
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+        zone_id: str,
+        side: str,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._zone_id = zone_id
+        self._attr_unique_id = f"{device_id}_{zone_id}_measured_temp"
+        self._attr_translation_key = f"measured_temp_{side}"
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.get_zone_measured(self._device_id, self._zone_id) is not None
+
+    @property
+    def native_value(self) -> float | None:
+        zone = self.coordinator.get_zone_measured(self._device_id, self._zone_id)
+        if zone is None:
+            return None
+        temp = zone.get("temp")
+        return float(temp) if temp is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        zone = self.coordinator.get_zone_measured(self._device_id, self._zone_id)
+        if not zone:
+            return None
+        thermal_state = zone.get("thermal_state")
+        return {"thermal_state": thermal_state} if thermal_state is not None else None
+
+
+class OrionZoneThermalStateSensor(OrionBaseEntity, SensorEntity):
+    """Thermal operating state for one zone (standby / heating / cooling).
+
+    Reads ``status.zones[].thermal_state`` from the live WS payload.
+    Only ``standby`` has been observed in captures; ``heating`` and
+    ``cooling`` are expected but unconfirmed.
+    """
+
+    _attr_icon = "mdi:thermometer-auto"
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+        zone_id: str,
+        side: str,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._zone_id = zone_id
+        self._attr_unique_id = f"{device_id}_{zone_id}_thermal_state"
+        self._attr_translation_key = f"thermal_state_{side}"
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.get_zone_measured(self._device_id, self._zone_id) is not None
+
+    @property
+    def native_value(self) -> str | None:
+        zone = self.coordinator.get_zone_measured(self._device_id, self._zone_id)
+        if zone is None:
+            return None
+        return zone.get("thermal_state")
