@@ -193,6 +193,18 @@
       },
       "sensor2_status_text": {
         "name": "Sensor 2 Status"
+      },
+      "measured_temp_left": {
+        "name": "Left Bed Temperature"
+      },
+      "measured_temp_right": {
+        "name": "Right Bed Temperature"
+      },
+      "thermal_state_left": {
+        "name": "Left Thermal State"
+      },
+      "thermal_state_right": {
+        "name": "Right Thermal State"
       }
     }
   }
