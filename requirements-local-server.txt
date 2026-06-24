@@ -1,0 +1,8 @@
+# Requirements for the local Orion server (run_local_server.py)
+# Install with: pip install -r requirements-local-server.txt
+
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+h11>=0.14.0          # HTTP/1.1 implementation for uvicorn
+websockets>=12.0     # WebSocket support for uvicorn
+cryptography>=42.0   # TLS cert generation (setup_certs.py)
