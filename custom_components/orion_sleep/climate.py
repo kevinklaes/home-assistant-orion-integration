@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.components.climate import (
     ClimateEntity,
     ClimateEntityFeature,
+    HVACAction,
     HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -119,8 +120,26 @@ class OrionZoneClimate(OrionBaseEntity, ClimateEntity):
             return HVACMode.OFF
         return HVACMode.HEAT_COOL if zone.get("on") else HVACMode.OFF
 
+    @property
+    def hvac_action(self) -> HVACAction | None:
+        """Return the zone's current action based on its thermal state."""
+        zone = self._zone_live()
+        if not zone or not zone.get("on"):
+            return HVACAction.OFF
+        measured = self.coordinator.get_zone_measured(self._device_id, self._zone_id)
+        state = (measured or {}).get("thermal_state")
+        if state is None:
+            return None
+        if "heat" in state.lower():
+            return HVACAction.HEATING
+        return HVACAction.IDLE
+
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set target temperature for this zone."""
+        """Set target temperature for this zone.
+
+        Also turns the zone on if it is currently off, which is the standard
+        HA expectation when a user sets a temperature on an off climate entity.
+        """
         temp = kwargs.get(ATTR_TEMPERATURE)
         if temp is None:
             return
@@ -128,8 +147,10 @@ class OrionZoneClimate(OrionBaseEntity, ClimateEntity):
         if not serial:
             _LOGGER.error("No serial_number for device %s", self._device_id)
             return
+        zone_live = self._zone_live()
+        turn_on = zone_live is None or not zone_live.get("on")
         await self.coordinator.api_client.update_live_device_zone(
-            serial, self._zone_id, temp=temp
+            serial, self._zone_id, on=True if turn_on else None, temp=temp
         )
         await self.coordinator.async_request_refresh()
 

@@ -19,6 +19,7 @@ from .const import (
     DEFAULT_INSIGHTS_DAYS,
     DEFAULT_SCAN_INTERVAL,
 )
+from .util import dedupe_devices_by_id
 from .websocket import OrionWebSocketManager, OrionWsState
 
 _LOGGER = logging.getLogger(__name__)
@@ -46,6 +47,9 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
             update_interval=timedelta(seconds=interval),
         )
         self.api_client = api_client
+        # Snapshot of options at setup time; compared in _async_options_updated
+        # to avoid spurious reloads when entry.data changes (e.g. token refresh).
+        self.options: dict = dict(config_entry.options)
         self.devices: list[dict] = []
         # Live snapshots keyed by device id (UUID). Populated from
         # GET /v1/devices/{serial}/live on each poll AND from
@@ -77,7 +81,7 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         try:
             self.user = await self.api_client.get_current_user()
             self.user_id = self.user.get("id", "")
-            self.devices = await self.api_client.list_devices()
+            self.devices = dedupe_devices_by_id(await self.api_client.list_devices())
         except OrionAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except (OrionApiError, OrionConnectionError) as err:
@@ -104,7 +108,7 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
 
         # Re-fetch devices each poll so zone/user changes surface.
         try:
-            self.devices = await self.api_client.list_devices()
+            self.devices = dedupe_devices_by_id(await self.api_client.list_devices())
         except OrionAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except (OrionApiError, OrionConnectionError) as err:
@@ -443,6 +447,14 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
                     return False
             return True
         return None
+
+    def zone_thermal_state(self, device_id: str, zone_id: str) -> str | None:
+        """Return the thermal state string for a zone (e.g. 'standby'), or None."""
+        zone = self.get_zone_measured(device_id, zone_id)
+        if zone is None:
+            return None
+        state = zone.get("thermal_state")
+        return state if isinstance(state, str) else None
 
     def is_device_on(self, device_id: str) -> bool | None:
         """Check if the device is on.

@@ -20,10 +20,11 @@ from .coordinator import OrionDataUpdateCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.CLIMATE,
     Platform.NUMBER,
     Platform.SENSOR,
-    Platform.BINARY_SENSOR,
     Platform.SWITCH,
 ]
 
@@ -68,7 +69,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update — reload the integration."""
+    """Reload only when options actually changed.
+
+    ``add_update_listener`` fires on any entry update, including token-refresh
+    callbacks that write new tokens to ``entry.data``. Reloading on those
+    data-only updates tears the integration down mid-operation, so we guard
+    against it by comparing ``entry.options`` to the snapshot taken at setup.
+    """
+    coordinator: OrionDataUpdateCoordinator | None = getattr(
+        entry, "runtime_data", None
+    )
+    if coordinator is not None and entry.options == coordinator.options:
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 
