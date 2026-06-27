@@ -86,6 +86,14 @@
       },
       "sensor2_on_bed": {
         "name": "Sensor 2 On Bed"
+      },
+      "device_problem": {
+        "name": "Problem"
+      }
+    },
+    "button": {
+      "reboot": {
+        "name": "Reboot"
       }
     },
     "switch": {
