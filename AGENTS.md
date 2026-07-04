@@ -178,7 +178,7 @@ Entities read from coordinator:
 | Platform | Entity | Key / unique_id suffix | Data Source |
 |----------|--------|----------------------|-------------|
 | Climate | Bed Climate | `_climate` | Target temp from live setpoint `zones[].temp`; current temp from live measured `status.zones[].temp` (WS, ~2s) |
-| Sensor | Sleep Score | `_sleep_score` | `insights.overview.{latest_date}.score` with `quality_rating` extra attr |
+| Sensor | Sleep Score Left / Right | `_{zone_id}_sleep_score` | per-zone `session.score` (via `get_latest_session_for_zone`) with `quality_rating` extra attr |
 | Sensor | Total Sleep Time | `_total_sleep_time` | `session.sleep_summary.time_asleep` (formatted as "Xh Ym") |
 | Sensor | Deep Sleep Time | `_deep_sleep_time` | `session.sleep_summary.deep_sleep` |
 | Sensor | REM Sleep Time | `_rem_sleep_time` | `session.sleep_summary.rem_sleep` |
@@ -186,7 +186,7 @@ Entities read from coordinator:
 | Sensor | Awake Time | `_awake_time` | `session.sleep_summary.awake_time` |
 | Sensor | Heart Rate Average | `_heart_rate_avg` | `session.heart_rate.average` + min/max/range extra attrs |
 | Sensor | Breath Rate | `_breath_rate` | `session.breath_rate.average` + min/max/range extra attrs |
-| Sensor | HRV | `_hrv` | `session.hrv.average` + min/max extra attrs |
+| Sensor | HRV Left / Right | `_{zone_id}_hrv` | per-zone `session.hrv.average` (via `get_latest_session_for_zone`), current value only |
 | Sensor | Body Movement Rate | `_body_movement_rate` | `session.movement.movement_rate` |
 | Sensor | Restless Time | `_restless_time` | `session.movement.total_seconds` (formatted as "Xm Ys") |
 | Sensor | Bedtime | `_bedtime` | `today_sleep_schedule.bedtime` (HH:mm) |

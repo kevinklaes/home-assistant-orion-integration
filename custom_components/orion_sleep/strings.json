@@ -122,8 +122,11 @@
       }
     },
     "sensor": {
-      "sleep_score": {
-        "name": "Sleep Score"
+      "sleep_score_left": {
+        "name": "Sleep Score Left"
+      },
+      "sleep_score_right": {
+        "name": "Sleep Score Right"
       },
       "total_sleep_time": {
         "name": "Total Sleep Time"
@@ -146,8 +149,11 @@
       "breath_rate": {
         "name": "Breath Rate"
       },
-      "hrv": {
-        "name": "HRV"
+      "hrv_left": {
+        "name": "HRV Left"
+      },
+      "hrv_right": {
+        "name": "HRV Right"
       },
       "body_movement_rate": {
         "name": "Body Movement Rate"
