@@ -451,9 +451,7 @@ class OrionSleepOptionsFlow(OptionsFlow):
             else:
                 self._partner_auth_value = phone
                 try:
-                    session = self.hass.helpers.aiohttp_client.async_get_clientsession(
-                        self.hass
-                    )
+                    session = async_get_clientsession(self.hass)
                     client = OrionApiClient(session=session)
                     await client.request_auth_code(phone=self._partner_auth_value)
                     return await self.async_step_partner_verify()
@@ -480,9 +478,7 @@ class OrionSleepOptionsFlow(OptionsFlow):
 
         if user_input is not None:
             code = user_input["code"].strip()
-            session = self.hass.helpers.aiohttp_client.async_get_clientsession(
-                self.hass
-            )
+            session = async_get_clientsession(self.hass)
             client = OrionApiClient(session=session)
             try:
                 email = (
