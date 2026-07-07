@@ -132,6 +132,8 @@ class OrionZoneClimate(OrionBaseEntity, ClimateEntity):
             return None
         if "heat" in state.lower():
             return HVACAction.HEATING
+        if "cool" in state.lower():
+            return HVACAction.COOLING
         return HVACAction.IDLE
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
