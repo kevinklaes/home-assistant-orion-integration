@@ -199,10 +199,12 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
             return None
 
         for date_key in sorted(insights_data.keys(), reverse=True):
-            sessions = insights_data[date_key].get("sessions", [])
+            day_data = insights_data[date_key]
+            sessions = day_data.get("sessions", [])
             for session in reversed(sessions):
                 if session.get("zone_id") == zone_id:
-                    return session
+                    # score lives at the day level, not the session level
+                    return {**session, "score": day_data.get("score")}
         return None
 
     def get_zone_live(self, device_id: str, zone_id: str) -> dict | None:
