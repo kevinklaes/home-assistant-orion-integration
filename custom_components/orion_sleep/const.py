@@ -34,6 +34,15 @@ DEFAULT_INSIGHTS_DAYS = 7
 CONF_ZONE_LEFT = "zone_left"
 DEFAULT_ZONE_LEFT = "zone_a"  # zone_a is left by default; swap via options if needed
 
+# Partner account — tokens stored in entry.data, flag stored in entry.options
+# so that adding/removing a partner triggers the options-change reload path.
+CONF_PARTNER_AUTH_METHOD = "partner_auth_method"
+CONF_PARTNER_AUTH_VALUE = "partner_auth_value"
+CONF_PARTNER_ACCESS_TOKEN = "partner_access_token"
+CONF_PARTNER_REFRESH_TOKEN = "partner_refresh_token"
+CONF_PARTNER_EXPIRES_AT = "partner_expires_at"
+CONF_PARTNER_CONFIGURED = "partner_configured"  # bool in options; triggers reload
+
 # The Orion app displays temperature as a relative offset (-10 to +10).
 # The mapping between offset and absolute Celsius is NON-LINEAR and comes
 # from the device's temperature_scale.relative[] lookup table.

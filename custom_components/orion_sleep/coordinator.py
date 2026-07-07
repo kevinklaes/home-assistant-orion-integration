@@ -37,6 +37,7 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         hass: HomeAssistant,
         config_entry: OrionConfigEntry,
         api_client: OrionApiClient,
+        partner_api_client: OrionApiClient | None = None,
     ) -> None:
         interval = config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         super().__init__(
@@ -47,6 +48,7 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
             update_interval=timedelta(seconds=interval),
         )
         self.api_client = api_client
+        self._partner_api_client = partner_api_client
         # Snapshot of options at setup time; compared in _async_options_updated
         # to avoid spurious reloads when entry.data changes (e.g. token refresh).
         self.options: dict = dict(config_entry.options)
@@ -104,6 +106,7 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         data: dict = {
             "schedules": {},
             "insights": {},
+            "partner_insights": {},
         }
 
         # Re-fetch devices each poll so zone/user changes surface.
@@ -164,15 +167,29 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         except (OrionApiError, OrionConnectionError) as err:
             _LOGGER.warning("Failed to fetch sleep schedules: %s", err)
 
+        insights_days = self.config_entry.options.get(
+            CONF_INSIGHTS_DAYS, DEFAULT_INSIGHTS_DAYS
+        )
         try:
-            insights_days = self.config_entry.options.get(
-                CONF_INSIGHTS_DAYS, DEFAULT_INSIGHTS_DAYS
-            )
             data["insights"] = await self.api_client.get_insights(days=insights_days)
         except OrionAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except (OrionApiError, OrionConnectionError) as err:
             _LOGGER.warning("Failed to fetch insights: %s", err)
+
+        if self._partner_api_client is not None:
+            try:
+                await self._partner_api_client.ensure_valid_token()
+                data["partner_insights"] = await self._partner_api_client.get_insights(
+                    days=insights_days
+                )
+            except OrionAuthError as err:
+                _LOGGER.warning(
+                    "Orion partner account auth failed — re-authentication required: %s",
+                    err,
+                )
+            except (OrionApiError, OrionConnectionError) as err:
+                _LOGGER.warning("Failed to fetch partner insights: %s", err)
 
         return data
 
@@ -192,19 +209,22 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         return None
 
     def get_latest_session_for_zone(self, zone_id: str) -> dict | None:
-        """Get the most recent sleep session for a specific zone from insights."""
-        insights = (self.data or {}).get("insights", {})
-        insights_data = insights.get("data", {})
-        if not insights_data:
-            return None
+        """Get the most recent sleep session for a specific zone.
 
-        for date_key in sorted(insights_data.keys(), reverse=True):
-            day_data = insights_data[date_key]
-            sessions = day_data.get("sessions", [])
-            for session in reversed(sessions):
-                if session.get("zone_id") == zone_id:
-                    # score lives at the day level, not the session level
-                    return {**session, "score": day_data.get("score")}
+        Checks the primary account's insights first, then the partner account's.
+        Primary and partner each cover their own zone, so in practice only one
+        source will have a match for any given zone_id.
+        """
+        for source_key in ("insights", "partner_insights"):
+            insights_data = (self.data or {}).get(source_key, {}).get("data", {})
+            if not insights_data:
+                continue
+            for date_key in sorted(insights_data.keys(), reverse=True):
+                day_data = insights_data[date_key]
+                for session in reversed(day_data.get("sessions", [])):
+                    if session.get("zone_id") == zone_id:
+                        # score lives at the day level, not the session level
+                        return {**session, "score": day_data.get("score")}
         return None
 
     def get_zone_live(self, device_id: str, zone_id: str) -> dict | None:
