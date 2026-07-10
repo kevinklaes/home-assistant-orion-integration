@@ -102,6 +102,8 @@ App-style offsets (-10 to +10) that map non-linearly to Celsius using the device
 - Asleep Phase 2 Offset
 - Wake Up Temperature Offset
 
+When a partner (second-side) account is linked, the same four sliders are exposed a second time with a `Partner` prefix. Each writes to the partner's own schedule through the partner API client, so both sides control their phase temperatures independently.
+
 ### Sensors — sleep insights (latest completed session)
 
 | Entity | Unit | Source |

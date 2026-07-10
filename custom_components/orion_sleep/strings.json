@@ -149,6 +149,18 @@
       },
       "wakeup_temp_offset": {
         "name": "Wake Up Temperature Offset"
+      },
+      "partner_bedtime_temp_offset": {
+        "name": "Partner Bedtime Temperature Offset"
+      },
+      "partner_phase_1_temp_offset": {
+        "name": "Partner Asleep Phase 1 Offset"
+      },
+      "partner_phase_2_temp_offset": {
+        "name": "Partner Asleep Phase 2 Offset"
+      },
+      "partner_wakeup_temp_offset": {
+        "name": "Partner Wake Up Temperature Offset"
       }
     },
     "sensor": {
