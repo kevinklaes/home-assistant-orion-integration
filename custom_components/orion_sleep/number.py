@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .api import OrionApiClient
 from .coordinator import OrionDataUpdateCoordinator
 from .entity import OrionBaseEntity
 
@@ -58,6 +59,21 @@ async def async_setup_entry(
                     coordinator, device_id, key, trans_key, icon, field
                 )
             )
+        # When a partner (second-side) account is linked, expose the same
+        # per-phase temperature controls for the partner's own schedule.
+        if coordinator.has_partner:
+            for key, trans_key, icon, field in OFFSET_NUMBER_DEFS:
+                entities.append(
+                    OrionTempOffsetNumber(
+                        coordinator,
+                        device_id,
+                        f"partner_{key}",
+                        f"partner_{trans_key}",
+                        icon,
+                        field,
+                        is_partner=True,
+                    )
+                )
 
     async_add_entities(entities)
 
@@ -69,6 +85,11 @@ class OrionTempOffsetNumber(OrionBaseEntity, NumberEntity):
     When the user sets a value, the offset is converted to absolute Celsius
     via the device's non-linear lookup table and sent to the API as a
     schedule update for today's day-of-week.
+
+    A single instance controls either the primary account's schedule or,
+    when ``is_partner`` is set, the linked partner account's schedule. The
+    partner variant reads today's schedule from the partner data and writes
+    through the partner API client so each side controls its own phases.
     """
 
     _attr_native_min_value = -10
@@ -84,17 +105,31 @@ class OrionTempOffsetNumber(OrionBaseEntity, NumberEntity):
         translation_key: str,
         icon: str,
         schedule_field: str,
+        is_partner: bool = False,
     ) -> None:
         super().__init__(coordinator, device_id)
         self._attr_unique_id = f"{device_id}_{key}"
         self._attr_translation_key = translation_key
         self._attr_icon = icon
         self._schedule_field = schedule_field
+        self._is_partner = is_partner
+
+    def _get_schedule(self) -> dict | None:
+        """Return today's schedule for this entity's side of the bed."""
+        if self._is_partner:
+            return self.coordinator.get_partner_today_schedule()
+        return self.coordinator.get_today_schedule()
+
+    def _get_api_client(self) -> OrionApiClient | None:
+        """Return the API client that owns this entity's schedule."""
+        if self._is_partner:
+            return self.coordinator.partner_api_client
+        return self.coordinator.api_client
 
     @property
     def native_value(self) -> float | None:
         """Return the current offset value from today's schedule."""
-        schedule = self.coordinator.get_today_schedule()
+        schedule = self._get_schedule()
         if not schedule:
             return None
         celsius = schedule.get(self._schedule_field)
@@ -107,7 +142,7 @@ class OrionTempOffsetNumber(OrionBaseEntity, NumberEntity):
             _LOGGER.error("Could not convert offset %s to Celsius", value)
             return
 
-        schedule = self.coordinator.get_today_schedule()
+        schedule = self._get_schedule()
         if not schedule:
             _LOGGER.error("No schedule available to update")
             return
@@ -117,7 +152,12 @@ class OrionTempOffsetNumber(OrionBaseEntity, NumberEntity):
             _LOGGER.error("No day field in today's schedule")
             return
 
-        await self.coordinator.api_client.update_schedule_temperature(
+        api_client = self._get_api_client()
+        if api_client is None:
+            _LOGGER.error("No API client available to update schedule")
+            return
+
+        await api_client.update_schedule_temperature(
             day=day,
             field=self._schedule_field,
             celsius=celsius,

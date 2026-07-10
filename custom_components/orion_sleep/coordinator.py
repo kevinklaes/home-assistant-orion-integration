@@ -65,6 +65,12 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         self.live_devices: dict[str, dict] = {}
         self.user: dict = {}
         self.user_id: str = ""
+        # Partner (second-side) account profile. Populated in _async_setup
+        # when a partner client is configured; the id keys into the partner
+        # account's own sleep-schedule response so we can expose per-phase
+        # temperature controls for the partner's side.
+        self.partner_user: dict = {}
+        self.partner_user_id: str = ""
 
         # Maps device serial_number -> UUID so the WS message handler
         # (which only knows the serial) can key into live_devices.
@@ -78,6 +84,16 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
             on_state_change=self._handle_ws_state,
         )
 
+    @property
+    def has_partner(self) -> bool:
+        """Whether a partner (second-side) account is configured."""
+        return self._partner_api_client is not None
+
+    @property
+    def partner_api_client(self) -> OrionApiClient | None:
+        """The partner account's API client, or None if not configured."""
+        return self._partner_api_client
+
     async def _async_setup(self) -> None:
         """Load one-time data: user profile, device list."""
         try:
@@ -88,6 +104,28 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
             raise ConfigEntryAuthFailed(str(err)) from err
         except (OrionApiError, OrionConnectionError) as err:
             raise UpdateFailed(f"Error fetching initial data: {err}") from err
+
+        # Best-effort partner profile lookup. A partner auth failure must not
+        # block setup of the primary account, so failures are logged and the
+        # partner id is retried on the next poll (see _async_update_data).
+        if self._partner_api_client is not None:
+            await self._refresh_partner_user()
+
+    async def _refresh_partner_user(self) -> None:
+        """Fetch the partner account's profile, tolerating failures."""
+        if self._partner_api_client is None:
+            return
+        try:
+            self.partner_user = await self._partner_api_client.get_current_user()
+            self.partner_user_id = self.partner_user.get("id", "")
+        except OrionAuthError as err:
+            _LOGGER.warning(
+                "Orion partner account auth failed while fetching profile — "
+                "re-authentication required: %s",
+                err,
+            )
+        except (OrionApiError, OrionConnectionError) as err:
+            _LOGGER.warning("Failed to fetch partner profile: %s", err)
 
     async def _async_update_data(self) -> dict:
         """Poll mutable state."""
@@ -107,6 +145,7 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
             "schedules": {},
             "insights": {},
             "partner_insights": {},
+            "partner_schedules": {},
         }
 
         # Re-fetch devices each poll so zone/user changes surface.
@@ -180,8 +219,14 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         if self._partner_api_client is not None:
             try:
                 await self._partner_api_client.ensure_valid_token()
+                # Recover the partner id if the setup-time lookup failed.
+                if not self.partner_user_id:
+                    await self._refresh_partner_user()
                 data["partner_insights"] = await self._partner_api_client.get_insights(
                     days=insights_days
+                )
+                data["partner_schedules"] = (
+                    await self._partner_api_client.get_sleep_schedules()
                 )
             except OrionAuthError as err:
                 _LOGGER.warning(
@@ -189,7 +234,7 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
                     err,
                 )
             except (OrionApiError, OrionConnectionError) as err:
-                _LOGGER.warning("Failed to fetch partner insights: %s", err)
+                _LOGGER.warning("Failed to fetch partner data: %s", err)
 
         return data
 
@@ -262,6 +307,19 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         schedules = (self.data or {}).get("schedules", {})
         today = schedules.get("today_sleep_schedule", {})
         return today.get(self.user_id)
+
+    def get_partner_today_schedule(self) -> dict | None:
+        """Get today's sleep schedule for the partner (second-side) user.
+
+        Reads from the partner account's own ``/v1/sleep-schedules`` response,
+        keyed by the partner's user id. Returns None when no partner is
+        configured or the partner data hasn't loaded yet.
+        """
+        if not self.partner_user_id:
+            return None
+        schedules = (self.data or {}).get("partner_schedules", {})
+        today = schedules.get("today_sleep_schedule", {})
+        return today.get(self.partner_user_id)
 
     def get_all_schedules(self) -> list[dict]:
         """Get all schedule entries for the current user."""
