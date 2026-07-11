@@ -92,6 +92,8 @@ One device is created per paired topper. Each device exposes the entities listed
 | Power | All zones on/off via `PUT /v1/devices/{serial}/live`. State derived from each zone's `on` field. |
 | Away Mode | Marks you present/away via `POST /v1/sleep-configurations/user-away`. State derived from whether any zone carries a populated `user` object (the authoritative presence signal). |
 | Sleep Schedule | Enable/disable today's bedtime action via `PUT /v1/sleep-schedules`. |
+| Partner Away Mode | Same as Away Mode but for the linked partner account. State read from the partner account's own device view. Only present when a partner is configured. |
+| Partner Sleep Schedule | Enable/disable the partner's own schedule via the partner API client. Only present when a partner is configured. |
 
 ### Numbers (temperature-offset sliders)
 
@@ -120,6 +122,8 @@ When a partner (second-side) account is linked, the same four sliders are expose
 | Body Movement Rate | /hr | `movement.movement_rate` |
 | Restless Time | formatted `Xm Ys` | `movement.total_seconds` |
 
+When a partner (second-side) account is linked, the account-level insight sensors (Total/Deep/REM/Light Sleep, Awake, Heart Rate, Breath Rate, Body Movement, Restless), the Current Temperature Offset sensor, and the Sleep Session binary sensor are all exposed a second time with a `Partner` prefix, sourced from the partner's own latest session. (Sleep Score and HRV are already per-side.)
+
 ### Sensors — today's schedule
 
 - Bedtime (HH:mm)
@@ -127,6 +131,8 @@ When a partner (second-side) account is linked, the same four sliders are expose
 - Schedule Duration (formatted, handles overnight)
 - Bedtime Temperature (°C) with phase-1 / phase-2 temp and smart-temperature attributes
 - Wake Up Temperature (°C)
+
+When a partner (second-side) account is linked, these five schedule read-outs are exposed again with a `Partner` prefix, reading from the partner's own schedule. They pair with the partner temperature-phase sliders above.
 - Current Temperature Offset (app-style -10 … +10, computed from the latest session sample via the per-device non-linear lookup table)
 
 ### Sensors — live (WebSocket-driven)

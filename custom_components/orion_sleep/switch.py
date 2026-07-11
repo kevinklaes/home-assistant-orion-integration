@@ -32,6 +32,16 @@ async def async_setup_entry(
         entities.append(OrionPowerSwitch(coordinator, device_id))
         entities.append(OrionAwayModeSwitch(coordinator, device_id))
         entities.append(OrionScheduleSwitch(coordinator, device_id))
+        # Away mode and the schedule enable flag are per-user, not per-device.
+        # When a partner (second-side) account is linked, expose the partner's
+        # own away toggle and schedule switch driven by the partner account.
+        if coordinator.has_partner:
+            entities.append(
+                OrionAwayModeSwitch(coordinator, device_id, is_partner=True)
+            )
+            entities.append(
+                OrionScheduleSwitch(coordinator, device_id, is_partner=True)
+            )
 
     async_add_entities(entities)
 
@@ -115,20 +125,28 @@ class OrionAwayModeSwitch(OrionBaseEntity, SwitchEntity):
     results in a no-op toggle.
     """
 
-    _attr_translation_key = "away_mode"
     _attr_icon = "mdi:home-export-outline"
 
     def __init__(
         self,
         coordinator: OrionDataUpdateCoordinator,
         device_id: str,
+        is_partner: bool = False,
     ) -> None:
         super().__init__(coordinator, device_id)
-        self._attr_unique_id = f"{device_id}_away_mode"
+        self._is_partner = is_partner
+        if is_partner:
+            self._attr_translation_key = "partner_away_mode"
+            self._attr_unique_id = f"{device_id}_partner_away_mode"
+        else:
+            self._attr_translation_key = "away_mode"
+            self._attr_unique_id = f"{device_id}_away_mode"
 
     @property
     def is_on(self) -> bool | None:
-        """Return True if the user is currently marked away."""
+        """Return True if this side's user is currently marked away."""
+        if self._is_partner:
+            return self.coordinator.is_partner_away(self._device_id)
         return self.coordinator.is_user_away(self._device_id)
 
     async def _set_away(self, is_away: bool) -> None:
@@ -142,9 +160,19 @@ class OrionAwayModeSwitch(OrionBaseEntity, SwitchEntity):
         """
         from .api import OrionApiError
 
+        if self._is_partner:
+            api_client = self.coordinator.partner_api_client
+            user_id = self.coordinator.partner_user_id
+        else:
+            api_client = self.coordinator.api_client
+            user_id = self.coordinator.user_id
+        if api_client is None or not user_id:
+            _LOGGER.error("No account available to set away mode")
+            return
+
         try:
-            await self.coordinator.api_client.set_user_away(
-                user_id=self.coordinator.user_id,
+            await api_client.set_user_away(
+                user_id=user_id,
                 is_away=is_away,
             )
         except OrionApiError as err:
@@ -175,35 +203,56 @@ class OrionScheduleSwitch(OrionBaseEntity, SwitchEntity):
     whether today's schedule has bedtime_is_active set.
     """
 
-    _attr_translation_key = "sleep_schedule"
     _attr_icon = "mdi:calendar-clock"
 
     def __init__(
         self,
         coordinator: OrionDataUpdateCoordinator,
         device_id: str,
+        is_partner: bool = False,
     ) -> None:
         super().__init__(coordinator, device_id)
-        self._attr_unique_id = f"{device_id}_sleep_schedule"
+        self._is_partner = is_partner
+        if is_partner:
+            self._attr_translation_key = "partner_sleep_schedule"
+            self._attr_unique_id = f"{device_id}_partner_sleep_schedule"
+        else:
+            self._attr_translation_key = "sleep_schedule"
+            self._attr_unique_id = f"{device_id}_sleep_schedule"
+
+    def _schedule(self) -> dict | None:
+        if self._is_partner:
+            return self.coordinator.get_partner_today_schedule()
+        return self.coordinator.get_today_schedule()
+
+    def _api_client(self):
+        if self._is_partner:
+            return self.coordinator.partner_api_client
+        return self.coordinator.api_client
 
     @property
     def is_on(self) -> bool | None:
         """Return True if today's sleep schedule is active."""
-        schedule = self.coordinator.get_today_schedule()
+        schedule = self._schedule()
         if not schedule:
             return None
         return schedule.get("bedtime_is_active", False)
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        """Enable the sleep schedule."""
-        await self.coordinator.api_client.update_sleep_schedule(
-            {"enabled": True}, action="enable"
+    async def _set_enabled(self, enabled: bool) -> None:
+        api_client = self._api_client()
+        if api_client is None:
+            _LOGGER.error("No account available to update sleep schedule")
+            return
+        await api_client.update_sleep_schedule(
+            {"enabled": enabled},
+            action="enable" if enabled else "disable",
         )
         await self.coordinator.async_request_refresh()
 
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enable the sleep schedule."""
+        await self._set_enabled(True)
+
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable the sleep schedule."""
-        await self.coordinator.api_client.update_sleep_schedule(
-            {"enabled": False}, action="disable"
-        )
-        await self.coordinator.async_request_refresh()
+        await self._set_enabled(False)

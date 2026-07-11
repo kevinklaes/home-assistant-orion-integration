@@ -71,6 +71,11 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         # temperature controls for the partner's side.
         self.partner_user: dict = {}
         self.partner_user_id: str = ""
+        # Partner account's view of the (shared) device list. Fetched each
+        # poll when a partner is configured so per-user state that the server
+        # scopes to the requesting account — currently the away/presence
+        # flag on zones[*].user — can be read for the partner side.
+        self.partner_devices: list[dict] = []
 
         # Maps device serial_number -> UUID so the WS message handler
         # (which only knows the serial) can key into live_devices.
@@ -228,6 +233,9 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
                 data["partner_schedules"] = (
                     await self._partner_api_client.get_sleep_schedules()
                 )
+                self.partner_devices = dedupe_devices_by_id(
+                    await self._partner_api_client.list_devices()
+                )
             except OrionAuthError as err:
                 _LOGGER.warning(
                     "Orion partner account auth failed — re-authentication required: %s",
@@ -239,8 +247,22 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         return data
 
     def get_latest_session(self) -> dict | None:
-        """Get the most recent sleep session from insights data."""
-        insights = (self.data or {}).get("insights", {})
+        """Get the most recent sleep session from the primary insights data."""
+        return self._latest_session_from("insights")
+
+    def get_partner_latest_session(self) -> dict | None:
+        """Get the most recent sleep session from the partner insights data.
+
+        Returns None when no partner is configured or the partner insights
+        haven't loaded yet.
+        """
+        if not self.has_partner:
+            return None
+        return self._latest_session_from("partner_insights")
+
+    def _latest_session_from(self, source_key: str) -> dict | None:
+        """Get the most recent session from a given insights source."""
+        insights = (self.data or {}).get(source_key, {})
         insights_data = insights.get("data", {})
         if not insights_data:
             return None
@@ -512,7 +534,25 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         ``400 "User has no previous device to return to"`` when the user
         was already present.
         """
-        for device in self.devices:
+        return self._derive_away(self.devices, device_id)
+
+    def is_partner_away(self, device_id: str) -> bool | None:
+        """Check whether the partner is currently marked away on the device.
+
+        Same signal as :meth:`is_user_away`, but read from the partner
+        account's own device list (``partner_devices``) since the server
+        scopes the ``zones[*].user`` presence flag to the requesting
+        account. Returns None when no partner is configured or the partner
+        device list hasn't loaded yet.
+        """
+        if not self.has_partner:
+            return None
+        return self._derive_away(self.partner_devices, device_id)
+
+    @staticmethod
+    def _derive_away(devices: list[dict], device_id: str) -> bool | None:
+        """Derive away-mode for a device from a given device list."""
+        for device in devices:
             if device.get("id") != device_id:
                 continue
             zones = device.get("zones") or []

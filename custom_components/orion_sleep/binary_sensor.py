@@ -39,6 +39,14 @@ async def async_setup_entry(
         if not device_id:
             continue
         entities.append(OrionSessionActiveBinarySensor(coordinator, device_id))
+        # Partner (second-side) parity — the partner's own session-active
+        # state. Only created when a partner account is linked.
+        if coordinator.has_partner:
+            entities.append(
+                OrionSessionActiveBinarySensor(
+                    coordinator, device_id, is_partner=True
+                )
+            )
         for sensor_name in _TOPPER_SENSORS:
             entities.append(
                 OrionSensorOnBedBinarySensor(coordinator, device_id, sensor_name)
@@ -61,21 +69,31 @@ class OrionSessionActiveBinarySensor(OrionBaseEntity, BinarySensorEntity):
     to provide "Asleep / Not asleep" state labels.
     """
 
-    _attr_translation_key = "sleep_session_active"
     _attr_icon = "mdi:bed"
 
     def __init__(
         self,
         coordinator: OrionDataUpdateCoordinator,
         device_id: str,
+        is_partner: bool = False,
     ) -> None:
         super().__init__(coordinator, device_id)
-        self._attr_unique_id = f"{device_id}_session_active"
+        self._is_partner = is_partner
+        if is_partner:
+            self._attr_translation_key = "partner_sleep_session_active"
+            self._attr_unique_id = f"{device_id}_partner_session_active"
+        else:
+            self._attr_translation_key = "sleep_session_active"
+            self._attr_unique_id = f"{device_id}_session_active"
 
     @property
     def is_on(self) -> bool | None:
         """Return True if a sleep session is currently active."""
-        session = self.coordinator.get_latest_session()
+        session = (
+            self.coordinator.get_partner_latest_session()
+            if self._is_partner
+            else self.coordinator.get_latest_session()
+        )
         if not session:
             return False
         return session.get("is_in_progress", False)

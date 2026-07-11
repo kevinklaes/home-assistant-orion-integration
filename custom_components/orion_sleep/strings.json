@@ -111,6 +111,13 @@
           "off": "Not asleep"
         }
       },
+      "partner_sleep_session_active": {
+        "name": "Partner Sleep Session",
+        "state": {
+          "on": "Asleep",
+          "off": "Not asleep"
+        }
+      },
       "sensor1_on_bed": {
         "name": "Sensor 1 On Bed"
       },
@@ -135,6 +142,12 @@
       },
       "sleep_schedule": {
         "name": "Sleep Schedule"
+      },
+      "partner_away_mode": {
+        "name": "Partner Away Mode"
+      },
+      "partner_sleep_schedule": {
+        "name": "Partner Sleep Schedule"
       }
     },
     "number": {
@@ -203,6 +216,33 @@
       "restless_time": {
         "name": "Restless Time"
       },
+      "partner_total_sleep_time": {
+        "name": "Partner Total Sleep Time"
+      },
+      "partner_deep_sleep_time": {
+        "name": "Partner Deep Sleep"
+      },
+      "partner_rem_sleep_time": {
+        "name": "Partner REM Sleep"
+      },
+      "partner_light_sleep_time": {
+        "name": "Partner Light Sleep"
+      },
+      "partner_awake_time": {
+        "name": "Partner Awake Time"
+      },
+      "partner_heart_rate_avg": {
+        "name": "Partner Heart Rate"
+      },
+      "partner_breath_rate": {
+        "name": "Partner Breath Rate"
+      },
+      "partner_body_movement_rate": {
+        "name": "Partner Body Movement Rate"
+      },
+      "partner_restless_time": {
+        "name": "Partner Restless Time"
+      },
       "bedtime": {
         "name": "Bedtime"
       },
@@ -218,8 +258,26 @@
       "wakeup_temp": {
         "name": "Wake Up Temperature"
       },
+      "partner_bedtime": {
+        "name": "Partner Bedtime"
+      },
+      "partner_wakeup_time": {
+        "name": "Partner Wake Up Time"
+      },
+      "partner_schedule_duration": {
+        "name": "Partner Schedule Duration"
+      },
+      "partner_bedtime_temp": {
+        "name": "Partner Bedtime Temperature"
+      },
+      "partner_wakeup_temp": {
+        "name": "Partner Wake Up Temperature"
+      },
       "current_temp_offset": {
         "name": "Current Temperature Offset"
+      },
+      "partner_current_temp_offset": {
+        "name": "Partner Current Temperature Offset"
       },
       "websocket_state": {
         "name": "Live Connection",
