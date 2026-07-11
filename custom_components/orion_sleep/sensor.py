@@ -315,6 +315,16 @@ async def async_setup_entry(
             entities.append(
                 OrionScheduleSensorEntity(coordinator, device_id, description)
             )
+        # Partner (second-side) schedule read-outs — the companions to the
+        # partner temperature-phase sliders. Only created when a partner
+        # account is linked.
+        if coordinator.has_partner:
+            for description in SCHEDULE_SENSOR_DESCRIPTIONS:
+                entities.append(
+                    OrionScheduleSensorEntity(
+                        coordinator, device_id, description, is_partner=True
+                    )
+                )
         entities.append(OrionCurrentTempOffsetSensor(coordinator, device_id))
         entities.append(OrionWebSocketStateSensor(coordinator, device_id))
         for sensor_name in _TOPPER_SENSORS:
@@ -386,7 +396,11 @@ class OrionSensorEntity(OrionBaseEntity, SensorEntity):
 
 
 class OrionScheduleSensorEntity(OrionBaseEntity, SensorEntity):
-    """Sensor entity for Orion Sleep schedule data."""
+    """Sensor entity for Orion Sleep schedule data.
+
+    Reflects the primary account's schedule, or the linked partner's own
+    schedule when ``is_partner`` is set (keyed by the partner user id).
+    """
 
     entity_description: OrionSensorEntityDescription
 
@@ -395,24 +409,33 @@ class OrionScheduleSensorEntity(OrionBaseEntity, SensorEntity):
         coordinator: OrionDataUpdateCoordinator,
         device_id: str,
         description: OrionSensorEntityDescription,
+        is_partner: bool = False,
     ) -> None:
         super().__init__(coordinator, device_id)
         self.entity_description = description
-        self._attr_unique_id = f"{device_id}_{description.key}"
+        self._is_partner = is_partner
+        if is_partner:
+            self._attr_unique_id = f"{device_id}_partner_{description.key}"
+            self._attr_translation_key = f"partner_{description.translation_key}"
+        else:
+            self._attr_unique_id = f"{device_id}_{description.key}"
+
+    def _schedule(self) -> dict | None:
+        if self._is_partner:
+            return self.coordinator.get_partner_today_schedule()
+        return self.coordinator.get_today_schedule()
 
     @property
     def native_value(self) -> Any:
         """Return the sensor value from today's schedule."""
-        schedule = self.coordinator.get_today_schedule()
-        return self.entity_description.value_fn(schedule)
+        return self.entity_description.value_fn(self._schedule())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
         if self.entity_description.extra_attrs_fn is None:
             return None
-        schedule = self.coordinator.get_today_schedule()
-        attrs = self.entity_description.extra_attrs_fn(schedule)
+        attrs = self.entity_description.extra_attrs_fn(self._schedule())
         return {k: v for k, v in attrs.items() if v is not None} or None
 
 

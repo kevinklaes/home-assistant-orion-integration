@@ -135,6 +135,12 @@
       },
       "sleep_schedule": {
         "name": "Sleep Schedule"
+      },
+      "partner_away_mode": {
+        "name": "Partner Away Mode"
+      },
+      "partner_sleep_schedule": {
+        "name": "Partner Sleep Schedule"
       }
     },
     "number": {
@@ -217,6 +223,21 @@
       },
       "wakeup_temp": {
         "name": "Wake Up Temperature"
+      },
+      "partner_bedtime": {
+        "name": "Partner Bedtime"
+      },
+      "partner_wakeup_time": {
+        "name": "Partner Wake Up Time"
+      },
+      "partner_schedule_duration": {
+        "name": "Partner Schedule Duration"
+      },
+      "partner_bedtime_temp": {
+        "name": "Partner Bedtime Temperature"
+      },
+      "partner_wakeup_temp": {
+        "name": "Partner Wake Up Temperature"
       },
       "current_temp_offset": {
         "name": "Current Temperature Offset"
