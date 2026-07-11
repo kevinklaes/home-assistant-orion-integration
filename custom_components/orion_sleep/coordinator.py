@@ -247,8 +247,22 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         return data
 
     def get_latest_session(self) -> dict | None:
-        """Get the most recent sleep session from insights data."""
-        insights = (self.data or {}).get("insights", {})
+        """Get the most recent sleep session from the primary insights data."""
+        return self._latest_session_from("insights")
+
+    def get_partner_latest_session(self) -> dict | None:
+        """Get the most recent sleep session from the partner insights data.
+
+        Returns None when no partner is configured or the partner insights
+        haven't loaded yet.
+        """
+        if not self.has_partner:
+            return None
+        return self._latest_session_from("partner_insights")
+
+    def _latest_session_from(self, source_key: str) -> dict | None:
+        """Get the most recent session from a given insights source."""
+        insights = (self.data or {}).get(source_key, {})
         insights_data = insights.get("data", {})
         if not insights_data:
             return None

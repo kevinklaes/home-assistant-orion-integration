@@ -111,6 +111,13 @@
           "off": "Not asleep"
         }
       },
+      "partner_sleep_session_active": {
+        "name": "Partner Sleep Session",
+        "state": {
+          "on": "Asleep",
+          "off": "Not asleep"
+        }
+      },
       "sensor1_on_bed": {
         "name": "Sensor 1 On Bed"
       },
@@ -209,6 +216,33 @@
       "restless_time": {
         "name": "Restless Time"
       },
+      "partner_total_sleep_time": {
+        "name": "Partner Total Sleep Time"
+      },
+      "partner_deep_sleep_time": {
+        "name": "Partner Deep Sleep"
+      },
+      "partner_rem_sleep_time": {
+        "name": "Partner REM Sleep"
+      },
+      "partner_light_sleep_time": {
+        "name": "Partner Light Sleep"
+      },
+      "partner_awake_time": {
+        "name": "Partner Awake Time"
+      },
+      "partner_heart_rate_avg": {
+        "name": "Partner Heart Rate"
+      },
+      "partner_breath_rate": {
+        "name": "Partner Breath Rate"
+      },
+      "partner_body_movement_rate": {
+        "name": "Partner Body Movement Rate"
+      },
+      "partner_restless_time": {
+        "name": "Partner Restless Time"
+      },
       "bedtime": {
         "name": "Bedtime"
       },
@@ -241,6 +275,9 @@
       },
       "current_temp_offset": {
         "name": "Current Temperature Offset"
+      },
+      "partner_current_temp_offset": {
+        "name": "Partner Current Temperature Offset"
       },
       "websocket_state": {
         "name": "Live Connection",

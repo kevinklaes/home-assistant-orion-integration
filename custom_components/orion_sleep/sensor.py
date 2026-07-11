@@ -315,17 +315,28 @@ async def async_setup_entry(
             entities.append(
                 OrionScheduleSensorEntity(coordinator, device_id, description)
             )
-        # Partner (second-side) schedule read-outs — the companions to the
-        # partner temperature-phase sliders. Only created when a partner
-        # account is linked.
+        entities.append(OrionCurrentTempOffsetSensor(coordinator, device_id))
+        # Partner (second-side) parity — the same account-level insight,
+        # schedule, and current-temp read-outs driven by the partner account.
+        # Only created when a partner account is linked.
         if coordinator.has_partner:
+            for description in INSIGHT_SENSOR_DESCRIPTIONS:
+                entities.append(
+                    OrionSensorEntity(
+                        coordinator, device_id, description, is_partner=True
+                    )
+                )
             for description in SCHEDULE_SENSOR_DESCRIPTIONS:
                 entities.append(
                     OrionScheduleSensorEntity(
                         coordinator, device_id, description, is_partner=True
                     )
                 )
-        entities.append(OrionCurrentTempOffsetSensor(coordinator, device_id))
+            entities.append(
+                OrionCurrentTempOffsetSensor(
+                    coordinator, device_id, is_partner=True
+                )
+            )
         entities.append(OrionWebSocketStateSensor(coordinator, device_id))
         for sensor_name in _TOPPER_SENSORS:
             entities.append(
@@ -358,7 +369,11 @@ async def async_setup_entry(
 
 
 class OrionSensorEntity(OrionBaseEntity, SensorEntity):
-    """Sensor entity for Orion Sleep insights."""
+    """Sensor entity for Orion Sleep insights.
+
+    Reflects the primary account's latest session, or the linked partner's
+    latest session when ``is_partner`` is set.
+    """
 
     entity_description: OrionSensorEntityDescription
 
@@ -367,19 +382,28 @@ class OrionSensorEntity(OrionBaseEntity, SensorEntity):
         coordinator: OrionDataUpdateCoordinator,
         device_id: str,
         description: OrionSensorEntityDescription,
+        is_partner: bool = False,
     ) -> None:
         super().__init__(coordinator, device_id)
         self.entity_description = description
-        self._attr_unique_id = f"{device_id}_{description.key}"
+        self._is_partner = is_partner
+        if is_partner:
+            self._attr_unique_id = f"{device_id}_partner_{description.key}"
+            self._attr_translation_key = f"partner_{description.translation_key}"
+        else:
+            self._attr_unique_id = f"{device_id}_{description.key}"
+
+    def _session(self) -> dict | None:
+        if self._is_partner:
+            return self.coordinator.get_partner_latest_session()
+        return self.coordinator.get_latest_session()
 
     @property
     def native_value(self) -> Any:
         """Return the sensor value."""
         if not self.coordinator.data:
             return None
-
-        session = self.coordinator.get_latest_session()
-        return self.entity_description.value_fn(session)
+        return self.entity_description.value_fn(self._session())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -389,8 +413,7 @@ class OrionSensorEntity(OrionBaseEntity, SensorEntity):
 
         if self.entity_description.extra_attrs_fn is None:
             return None
-        session = self.coordinator.get_latest_session()
-        attrs = self.entity_description.extra_attrs_fn(session)
+        attrs = self.entity_description.extra_attrs_fn(self._session())
         # Filter out None values
         return {k: v for k, v in attrs.items() if v is not None} or None
 
@@ -451,7 +474,6 @@ class OrionCurrentTempOffsetSensor(OrionBaseEntity, SensorEntity):
     accurate non-linear conversion.
     """
 
-    _attr_translation_key = "current_temp_offset"
     _attr_icon = "mdi:thermometer"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -459,14 +481,25 @@ class OrionCurrentTempOffsetSensor(OrionBaseEntity, SensorEntity):
         self,
         coordinator: OrionDataUpdateCoordinator,
         device_id: str,
+        is_partner: bool = False,
     ) -> None:
         super().__init__(coordinator, device_id)
-        self._attr_unique_id = f"{device_id}_current_temp_offset"
+        self._is_partner = is_partner
+        if is_partner:
+            self._attr_translation_key = "partner_current_temp_offset"
+            self._attr_unique_id = f"{device_id}_partner_current_temp_offset"
+        else:
+            self._attr_translation_key = "current_temp_offset"
+            self._attr_unique_id = f"{device_id}_current_temp_offset"
 
     @property
     def native_value(self) -> float | None:
         """Return the current measured temperature offset."""
-        session = self.coordinator.get_latest_session()
+        session = (
+            self.coordinator.get_partner_latest_session()
+            if self._is_partner
+            else self.coordinator.get_latest_session()
+        )
         if not session:
             return None
         temp_data = session.get("temperature", {})

@@ -122,6 +122,8 @@ When a partner (second-side) account is linked, the same four sliders are expose
 | Body Movement Rate | /hr | `movement.movement_rate` |
 | Restless Time | formatted `Xm Ys` | `movement.total_seconds` |
 
+When a partner (second-side) account is linked, the account-level insight sensors (Total/Deep/REM/Light Sleep, Awake, Heart Rate, Breath Rate, Body Movement, Restless), the Current Temperature Offset sensor, and the Sleep Session binary sensor are all exposed a second time with a `Partner` prefix, sourced from the partner's own latest session. (Sleep Score and HRV are already per-side.)
+
 ### Sensors — today's schedule
 
 - Bedtime (HH:mm)
