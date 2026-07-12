@@ -1,0 +1,5 @@
+# Gas Town polecat worktree scaffolding (injected per-session, not project files)
+/.beads/
+/.claude/
+/.runtime/
+/CLAUDE.md
