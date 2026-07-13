@@ -105,8 +105,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "requests" },
-    { name = "websockets" },
+    { name = "requests", specifier = ">=2.34.2" },
+    { name = "websockets", specifier = ">=16.0" },
 ]
 
 [[package]]
