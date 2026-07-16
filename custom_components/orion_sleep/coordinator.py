@@ -287,6 +287,34 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
                 return sessions[-1]
         return None
 
+    def get_consistency_metric(self) -> dict | None:
+        """Get the day granularity's latest consistency metric (primary account)."""
+        return self._latest_day_metric("insights_v3", "consistency")
+
+    def get_partner_consistency_metric(self) -> dict | None:
+        """Get the day granularity's latest consistency metric (partner account).
+
+        Returns None when no partner is configured or the partner insights
+        haven't loaded yet.
+        """
+        if not self.has_partner:
+            return None
+        return self._latest_day_metric("partner_insights_v3", "consistency")
+
+    def _latest_day_metric(self, source_key: str, metric_key: str) -> dict | None:
+        """Get a named metric from the day granularity's latest period."""
+        day_data = (
+            (self.data or {})
+            .get(source_key, {})
+            .get("granularities", {})
+            .get("day", {})
+            .get("data", {})
+        )
+        if not day_data:
+            return None
+        latest_key = max(day_data.keys())
+        return day_data[latest_key].get("metrics", {}).get(metric_key)
+
     def get_latest_session_for_zone(self, zone_id: str) -> dict | None:
         """Get the most recent sleep session for a specific zone.
 

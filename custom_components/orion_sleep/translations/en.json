@@ -285,6 +285,12 @@
       "partner_current_temp_offset": {
         "name": "Partner Current Temperature Offset"
       },
+      "consistency": {
+        "name": "Consistency"
+      },
+      "partner_consistency": {
+        "name": "Partner Consistency"
+      },
       "websocket_state": {
         "name": "Live Connection",
         "state": {

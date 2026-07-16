@@ -127,6 +127,14 @@ When a partner (second-side) account is linked, the same four sliders are expose
 
 When a partner (second-side) account is linked, the account-level insight sensors (Total/Deep/REM/Light Sleep, Awake, Heart Rate, Breath Rate, Body Movement, Restless, Breathing Disturbances), the Current Temperature Offset sensor, and the Sleep Session binary sensor are all exposed a second time with a `Partner` prefix, sourced from the partner's own latest session. (Sleep Score and HRV are already per-side.)
 
+### Sensors — sleep trends (`/v3/insights`, day granularity)
+
+| Entity | Unit | Source |
+|---|---|---|
+| Consistency | % | `metrics.consistency.value` from the day granularity's latest period, with an `insight` attribute plus `vs_prior_day` / `vs_prior_week` / `vs_prior_month` trend-comparison attributes |
+
+When a partner (second-side) account is linked, a Partner Consistency sensor is exposed too, sourced from the partner's own `/v3/insights` data.
+
 ### Sensors — today's schedule
 
 - Bedtime (HH:mm)

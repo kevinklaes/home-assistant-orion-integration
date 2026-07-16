@@ -14,7 +14,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature, UnitOfTime
+from homeassistant.const import PERCENTAGE, UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -317,6 +317,7 @@ async def async_setup_entry(
             )
         entities.append(OrionCurrentTempOffsetSensor(coordinator, device_id))
         entities.append(OrionBreathingDisturbancesSensor(coordinator, device_id))
+        entities.append(OrionConsistencySensor(coordinator, device_id))
         # Partner (second-side) parity — the same account-level insight,
         # schedule, and current-temp read-outs driven by the partner account.
         # Only created when a partner account is linked.
@@ -342,6 +343,9 @@ async def async_setup_entry(
                 OrionBreathingDisturbancesSensor(
                     coordinator, device_id, is_partner=True
                 )
+            )
+            entities.append(
+                OrionConsistencySensor(coordinator, device_id, is_partner=True)
             )
         entities.append(OrionWebSocketStateSensor(coordinator, device_id))
         for sensor_name in _TOPPER_SENSORS:
@@ -580,6 +584,64 @@ class OrionBreathingDisturbancesSensor(OrionBaseEntity, SensorEntity):
             "ahi": apnea.get("ahi"),
         }
         return {k: v for k, v in attrs.items() if v is not None} or None
+
+
+class OrionConsistencySensor(OrionBaseEntity, SensorEntity):
+    """Sleep consistency score from the ``/v3/insights`` trends endpoint.
+
+    Reads ``metrics.consistency`` from the day granularity's latest period
+    (0-100, percent) — how consistent bed times have been recently. Reflects
+    the partner account's own value when ``is_partner`` is set.
+    """
+
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:calendar-check"
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+        is_partner: bool = False,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._is_partner = is_partner
+        if is_partner:
+            self._attr_translation_key = "partner_consistency"
+            self._attr_unique_id = f"{device_id}_partner_consistency"
+        else:
+            self._attr_translation_key = "consistency"
+            self._attr_unique_id = f"{device_id}_consistency"
+
+    def _metric(self) -> dict | None:
+        if self._is_partner:
+            return self.coordinator.get_partner_consistency_metric()
+        return self.coordinator.get_consistency_metric()
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the consistency score."""
+        metric = self._metric()
+        if not metric:
+            return None
+        return metric.get("value")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return the insight string and trend comparisons."""
+        metric = self._metric()
+        if not metric:
+            return None
+        attrs: dict[str, Any] = {}
+        insight = metric.get("insight")
+        if insight is not None:
+            attrs["insight"] = insight
+        comparisons = metric.get("comparisons") or {}
+        for key in ("vs_prior_day", "vs_prior_week", "vs_prior_month"):
+            value = comparisons.get(key)
+            if value is not None:
+                attrs[key] = value
+        return attrs or None
 
 
 class OrionWebSocketStateSensor(OrionBaseEntity, SensorEntity):
