@@ -135,6 +135,17 @@ When a partner (second-side) account is linked, the account-level insight sensor
 
 When a partner (second-side) account is linked, a Partner Consistency sensor is exposed too, sourced from the partner's own `/v3/insights` data.
 
+### Sensors — trends (calendar/trends view, week/month granularity)
+
+`/v3/insights` also returns pre-aggregated week- and month-granularity trend data — the source for the app's calendar/trends view. Rather than add 8 metric entities per granularity, each period's overview score is one sensor with the full metric breakdown as attributes.
+
+| Entity | Unit | Source |
+|---|---|---|
+| Weekly Sleep Score | points | latest week period's `overview.score`, with `rating` / `color` / `award` / `state` / `start_date` / `end_date` / `days_with_data` plus one attribute per metric (`sleep_duration`, `body_movements`, `breathing_disturbances`, `consistency`, `sleep_debt`, `hrv`, `heart_rate`, `breath_rate`) — each `{value, unit, insight, comparison}`, comparison being that metric's `vs_prior_week` |
+| Monthly Sleep Score | points | same as above from the latest month period, comparison being `vs_prior_month` |
+
+When a partner (second-side) account is linked, both trend sensors are exposed again with a `Partner` prefix, sourced from the partner's own `/v3/insights` data.
+
 ### Sensors — today's schedule
 
 - Bedtime (HH:mm)

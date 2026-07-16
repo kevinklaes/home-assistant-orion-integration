@@ -97,6 +97,44 @@ def _score_quality(score: float | int | None) -> str | None:
     return "Poor"
 
 
+# The 8 metric keys always present under an InsightsV3Period's `metrics`.
+_V3_METRIC_KEYS: tuple[str, ...] = (
+    "sleep_duration",
+    "body_movements",
+    "breathing_disturbances",
+    "consistency",
+    "sleep_debt",
+    "hrv",
+    "heart_rate",
+    "breath_rate",
+)
+
+
+def _v3_metric_summary(period: dict | None, comparison_key: str) -> dict[str, Any]:
+    """Flatten a v3 insights period's 8 metrics into dashboard-friendly attrs.
+
+    Each metric's full envelope carries chart-only fields (series, axis,
+    sessions, ...) that aren't useful as HA attributes, so this keeps just
+    value/unit/insight plus the single comparison relevant to the period's
+    own granularity (e.g. ``vs_prior_week`` for a week period) rather than
+    all three comparison windows.
+    """
+    metrics = (period or {}).get("metrics", {})
+    summary: dict[str, Any] = {}
+    for key in _V3_METRIC_KEYS:
+        metric = metrics.get(key)
+        if not isinstance(metric, dict):
+            continue
+        comparison = (metric.get("comparisons") or {}).get(comparison_key)
+        summary[key] = {
+            "value": metric.get("value"),
+            "unit": metric.get("unit"),
+            "insight": metric.get("insight"),
+            "comparison": comparison,
+        }
+    return summary
+
+
 # ── Sensor descriptions ───────────────────────────────────────────────────
 
 
@@ -318,6 +356,10 @@ async def async_setup_entry(
         entities.append(OrionCurrentTempOffsetSensor(coordinator, device_id))
         entities.append(OrionBreathingDisturbancesSensor(coordinator, device_id))
         entities.append(OrionConsistencySensor(coordinator, device_id))
+        for granularity in ("week", "month"):
+            entities.append(
+                OrionTrendScoreSensor(coordinator, device_id, granularity)
+            )
         # Partner (second-side) parity — the same account-level insight,
         # schedule, and current-temp read-outs driven by the partner account.
         # Only created when a partner account is linked.
@@ -347,6 +389,12 @@ async def async_setup_entry(
             entities.append(
                 OrionConsistencySensor(coordinator, device_id, is_partner=True)
             )
+            for granularity in ("week", "month"):
+                entities.append(
+                    OrionTrendScoreSensor(
+                        coordinator, device_id, granularity, is_partner=True
+                    )
+                )
         entities.append(OrionWebSocketStateSensor(coordinator, device_id))
         for sensor_name in _TOPPER_SENSORS:
             entities.append(
@@ -642,6 +690,95 @@ class OrionConsistencySensor(OrionBaseEntity, SensorEntity):
             if value is not None:
                 attrs[key] = value
         return attrs or None
+
+
+# Distinct icon per granularity so the two trend sensors are visually
+# distinguishable at a glance in the entity list / dashboard.
+_TREND_ICONS: dict[str, str] = {
+    "week": "mdi:calendar-week",
+    "month": "mdi:calendar-month",
+}
+
+# "week" -> "weekly", "month" -> "monthly", used for both the translation
+# key and the InsightsV3Metric.comparisons key relevant to that period.
+_TREND_LABELS: dict[str, str] = {
+    "week": "weekly",
+    "month": "monthly",
+}
+
+
+class OrionTrendScoreSensor(OrionBaseEntity, SensorEntity):
+    """Week/month overview score from GET /v3/insights (calendar/trends view).
+
+    Each granularity (week or month) returns the same 8-metric envelope
+    (sleep_duration, body_movements, breathing_disturbances, consistency,
+    sleep_debt, hrv, heart_rate, breath_rate) plus an overview score for
+    that period. Rather than create 8 additional entities per granularity,
+    this exposes the period's overview score as the state and the full
+    metric summary as extra attributes — a dashboard-friendly attribute
+    structure per the app's own grouping.
+    """
+
+    _attr_native_unit_of_measurement = "points"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+        granularity: str,
+        is_partner: bool = False,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._granularity = granularity
+        self._is_partner = is_partner
+        self._comparison_key = f"vs_prior_{granularity}"
+        self._attr_icon = _TREND_ICONS[granularity]
+        label = _TREND_LABELS[granularity]
+        if is_partner:
+            self._attr_unique_id = f"{device_id}_partner_{granularity}_sleep_score"
+            self._attr_translation_key = f"partner_{label}_sleep_score"
+        else:
+            self._attr_unique_id = f"{device_id}_{granularity}_sleep_score"
+            self._attr_translation_key = f"{label}_sleep_score"
+
+    def _period(self) -> dict | None:
+        if self._granularity == "week":
+            return (
+                self.coordinator.get_partner_weekly_insights()
+                if self._is_partner
+                else self.coordinator.get_weekly_insights()
+            )
+        return (
+            self.coordinator.get_partner_monthly_insights()
+            if self._is_partner
+            else self.coordinator.get_monthly_insights()
+        )
+
+    @property
+    def native_value(self) -> int | None:
+        period = self._period()
+        if not period:
+            return None
+        return (period.get("overview") or {}).get("score")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        period = self._period()
+        if not period:
+            return None
+        overview = period.get("overview") or {}
+        attrs: dict[str, Any] = {
+            "rating": overview.get("rating"),
+            "color": overview.get("color"),
+            "award": overview.get("award"),
+            "state": overview.get("state"),
+            "start_date": period.get("start_date"),
+            "end_date": period.get("end_date"),
+            "days_with_data": period.get("days_with_data"),
+        }
+        attrs.update(_v3_metric_summary(period, self._comparison_key))
+        return {k: v for k, v in attrs.items() if v is not None} or None
 
 
 class OrionWebSocketStateSensor(OrionBaseEntity, SensorEntity):

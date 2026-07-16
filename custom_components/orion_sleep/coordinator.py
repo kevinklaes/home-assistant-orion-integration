@@ -362,6 +362,56 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         latest_key = sorted(day_data.keys(), reverse=True)[0]
         return day_data[latest_key].get("metrics", {}).get(metric)
 
+    def get_weekly_insights(self) -> dict | None:
+        """Get the most recent week-granularity period from v3 insights."""
+        return self._latest_v3_period("insights_v3", "week")
+
+    def get_monthly_insights(self) -> dict | None:
+        """Get the most recent month-granularity period from v3 insights."""
+        return self._latest_v3_period("insights_v3", "month")
+
+    def get_partner_weekly_insights(self) -> dict | None:
+        """Get the most recent week-granularity period for the partner.
+
+        Returns None when no partner is configured or the partner's v3
+        insights haven't loaded yet.
+        """
+        if not self.has_partner:
+            return None
+        return self._latest_v3_period("partner_insights_v3", "week")
+
+    def get_partner_monthly_insights(self) -> dict | None:
+        """Get the most recent month-granularity period for the partner.
+
+        Returns None when no partner is configured or the partner's v3
+        insights haven't loaded yet.
+        """
+        if not self.has_partner:
+            return None
+        return self._latest_v3_period("partner_insights_v3", "month")
+
+    def _latest_v3_period(self, source_key: str, granularity: str) -> dict | None:
+        """Get the full latest period dict for a v3 insights granularity.
+
+        Unlike `_latest_v3_day_metric`, this returns the whole period
+        (overview + all 8 metrics), needed by the week/month trend sensors
+        that summarize the period rather than track a single metric.
+        Period keys are ISO dates for day/week (week key = the week's
+        start date) and "YYYY-MM" for month — both sort correctly as
+        plain strings, so no date parsing is needed.
+        """
+        period_data = (
+            (self.data or {})
+            .get(source_key, {})
+            .get("granularities", {})
+            .get(granularity, {})
+            .get("data", {})
+        )
+        if not period_data:
+            return None
+        latest_key = sorted(period_data.keys(), reverse=True)[0]
+        return period_data[latest_key]
+
     def get_zone_live(self, device_id: str, zone_id: str) -> dict | None:
         """Return the live setpoint dict for a specific zone, or None.
 

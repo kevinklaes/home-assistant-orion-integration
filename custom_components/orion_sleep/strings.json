@@ -331,6 +331,18 @@
       },
       "thermal_state_right": {
         "name": "Right Thermal State"
+      },
+      "weekly_sleep_score": {
+        "name": "Weekly Sleep Score"
+      },
+      "monthly_sleep_score": {
+        "name": "Monthly Sleep Score"
+      },
+      "partner_weekly_sleep_score": {
+        "name": "Partner Weekly Sleep Score"
+      },
+      "partner_monthly_sleep_score": {
+        "name": "Partner Monthly Sleep Score"
       }
     }
   }
