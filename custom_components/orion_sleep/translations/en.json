@@ -291,6 +291,12 @@
       "partner_consistency": {
         "name": "Partner Consistency"
       },
+      "sleep_debt": {
+        "name": "Sleep Debt"
+      },
+      "partner_sleep_debt": {
+        "name": "Partner Sleep Debt"
+      },
       "websocket_state": {
         "name": "Live Connection",
         "state": {

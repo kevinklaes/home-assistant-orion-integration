@@ -315,6 +315,25 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         latest_key = max(day_data.keys())
         return day_data[latest_key].get("metrics", {}).get(metric_key)
 
+    def get_sleep_debt(self) -> dict | None:
+        """Get the sleep_debt metric from the primary account's v3 insights.
+
+        Returns the metric envelope for the most recent day-granularity
+        period (value/need/unit/status/insight/comparisons), or None if
+        v3 insights haven't loaded yet.
+        """
+        return self._latest_day_metric("insights_v3", "sleep_debt")
+
+    def get_partner_sleep_debt(self) -> dict | None:
+        """Get the sleep_debt metric from the partner account's v3 insights.
+
+        Returns None when no partner is configured or the partner's v3
+        insights haven't loaded yet.
+        """
+        if not self.has_partner:
+            return None
+        return self._latest_day_metric("partner_insights_v3", "sleep_debt")
+
     def get_latest_session_for_zone(self, zone_id: str) -> dict | None:
         """Get the most recent sleep session for a specific zone.
 

@@ -318,6 +318,7 @@ async def async_setup_entry(
         entities.append(OrionCurrentTempOffsetSensor(coordinator, device_id))
         entities.append(OrionBreathingDisturbancesSensor(coordinator, device_id))
         entities.append(OrionConsistencySensor(coordinator, device_id))
+        entities.append(OrionSleepDebtSensor(coordinator, device_id))
         # Partner (second-side) parity — the same account-level insight,
         # schedule, and current-temp read-outs driven by the partner account.
         # Only created when a partner account is linked.
@@ -346,6 +347,9 @@ async def async_setup_entry(
             )
             entities.append(
                 OrionConsistencySensor(coordinator, device_id, is_partner=True)
+            )
+            entities.append(
+                OrionSleepDebtSensor(coordinator, device_id, is_partner=True)
             )
         entities.append(OrionWebSocketStateSensor(coordinator, device_id))
         for sensor_name in _TOPPER_SENSORS:
@@ -582,6 +586,65 @@ class OrionBreathingDisturbancesSensor(OrionBaseEntity, SensorEntity):
             "low_seconds": details.get("low_seconds"),
             "high_seconds": details.get("high_seconds"),
             "ahi": apnea.get("ahi"),
+        }
+        return {k: v for k, v in attrs.items() if v is not None} or None
+
+
+class OrionSleepDebtSensor(OrionBaseEntity, SensorEntity):
+    """Sleep debt trend metric from ``/v3/insights`` (latest day period).
+
+    Surfaces the computed sleep-need shortfall in minutes, mirroring the
+    app's new sleep-debt trend card. ``need`` (the computed baseline) and
+    ``status`` (``balanced``/``low``) are account-level, not per-zone, so
+    this is one sensor per account rather than per-side like sleep score.
+    """
+
+    _attr_native_unit_of_measurement = "min"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:sleep-off"
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+        is_partner: bool = False,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._is_partner = is_partner
+        if is_partner:
+            self._attr_translation_key = "partner_sleep_debt"
+            self._attr_unique_id = f"{device_id}_partner_sleep_debt"
+        else:
+            self._attr_translation_key = "sleep_debt"
+            self._attr_unique_id = f"{device_id}_sleep_debt"
+
+    def _metric(self) -> dict | None:
+        if self._is_partner:
+            return self.coordinator.get_partner_sleep_debt()
+        return self.coordinator.get_sleep_debt()
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the sleep debt value in minutes."""
+        metric = self._metric()
+        if not metric:
+            return None
+        return metric.get("value")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return need, status, insight, and prior-period comparisons."""
+        metric = self._metric()
+        if not metric:
+            return None
+        comparisons = metric.get("comparisons") or {}
+        attrs = {
+            "need": metric.get("need"),
+            "status": metric.get("status"),
+            "insight": metric.get("insight"),
+            "vs_prior_day": comparisons.get("vs_prior_day"),
+            "vs_prior_week": comparisons.get("vs_prior_week"),
+            "vs_prior_month": comparisons.get("vs_prior_month"),
         }
         return {k: v for k, v in attrs.items() if v is not None} or None
 

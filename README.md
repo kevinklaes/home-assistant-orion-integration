@@ -135,6 +135,14 @@ When a partner (second-side) account is linked, the account-level insight sensor
 
 When a partner (second-side) account is linked, a Partner Consistency sensor is exposed too, sourced from the partner's own `/v3/insights` data.
 
+### Sensors — sleep trends (v3 insights)
+
+| Entity | Unit | Source |
+|---|---|---|
+| Sleep Debt | min | `/v3/insights` day granularity, latest period's `metrics.sleep_debt.value`, with `need`, `status` (`balanced`/`low`), `insight`, and `vs_prior_day`/`vs_prior_week`/`vs_prior_month` comparison attributes |
+
+When a partner (second-side) account is linked, Sleep Debt is exposed a second time with a `Partner` prefix, sourced from the partner's own `/v3/insights` data.
+
 ### Sensors — today's schedule
 
 - Bedtime (HH:mm)
