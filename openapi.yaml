@@ -953,6 +953,65 @@ paths:
               schema:
                 $ref: "#/components/schemas/InsightsResponse"
 
+  /v3/insights:
+    get:
+      operationId: getInsightsV3
+      summary: Get sleep insights with trends (v3)
+      description: |
+        Live-verified (2026-07-16) against the primary account only — the
+        partner-side account is NOT yet confirmed to return the same shape
+        (partner login requires an interactive OTP code; re-check once that
+        can be exercised, e.g. via a fresh `orion_info.py --relogin` run
+        authenticated as the partner).
+
+        Backs the "new sleep insights" surface announced 2026-07-15
+        (consistency, sleep debt, breathing disturbances, calendar/trends
+        view). Unlike `/v2/insights`, this endpoint pre-aggregates data into
+        day/week/month granularities with named metrics, comparison deltas,
+        and human-readable insight strings — this is the data source for the
+        app's new trends/calendar UI.
+
+        `from`/`to` query params were probed but did NOT change the returned
+        `day` window (always the trailing ~14 days) or reliably widen `week`
+        (a far-past `from` collapsed the week range to zero results) — treat
+        them as unverified/no-op until proven otherwise. The endpoint appears
+        to always return a fixed trailing window per granularity with no
+        working pagination/range params found during this pass.
+
+        Sessions referenced under each metric's `sessions[].session_id` are
+        the same session_id's returned by `/v2/insights` — this endpoint is a
+        re-aggregation over the same underlying session data, not a separate
+        higher-accuracy model (spot-checked one day: v2 `time_asleep` = 433
+        min vs v3 `sleep_duration.value` = 429 min for the same session_id —
+        a minor rounding/derivation difference, not a distinct model).
+      tags: [Insights]
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: |
+            Start date (ISO 8601). Probed but did not change the observed
+            `day` window in testing — unverified/likely no-op.
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          description: |
+            End date (ISO 8601). Probed but did not change the observed
+            `day` window in testing — unverified/likely no-op.
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Sleep insights with trends (v3 format)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InsightsV3Response"
+
   # ──────────────────────────────────────────────
   #  Onboarding
   # ──────────────────────────────────────────────
@@ -1854,6 +1913,12 @@ components:
         user_id:
           type: string
           format: uuid
+        has_subscription:
+          type: boolean
+          description: |
+            Observed 2026-07-16. Whether the account has an active Orion
+            subscription; unclear yet whether a false value truncates any of
+            the fields below (only ever observed true so far).
         data:
           type: object
           description: |
@@ -1913,6 +1978,12 @@ components:
       description: |
         One sleep session for a single zone. The score is NOT present here —
         it is on the parent DailyInsight object.
+
+        Fields below `confidence` were added 2026-07-16 after re-diffing a
+        live response against this schema — none of them existed in the
+        previously documented shape. `apnea` in particular is plausibly the
+        session-level source for the new `breathing_disturbances` metric
+        surfaced by `/v3/insights` (same `session_id` observed on both).
       properties:
         session_id:
           type: string
@@ -1928,6 +1999,56 @@ components:
         end_time:
           type: string
           format: date-time
+        confidence:
+          type: number
+          description: 0-1 confidence score for the session detection.
+        is_combined:
+          type: boolean
+          description: |
+            Observed 2026-07-16, always false so far. Whether this session
+            combines data from multiple zones (dual-occupancy detection?).
+        combined_zone_ids:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: Observed 2026-07-16, always null so far.
+        user_rating:
+          type: integer
+          nullable: true
+          description: Observed 2026-07-16, always null so far. User-submitted sleep quality rating.
+        user_fallasleep_timestamp:
+          type: string
+          format: date-time
+          nullable: true
+          description: Observed 2026-07-16, always null so far. Manual user correction to fall-asleep time.
+        user_wakeup_timestamp:
+          type: string
+          format: date-time
+          nullable: true
+          description: Observed 2026-07-16, always null so far. Manual user correction to wake-up time.
+        has_been_edited:
+          type: boolean
+          description: Observed 2026-07-16. Whether the user manually edited this session.
+        has_been_rated:
+          type: boolean
+          description: Observed 2026-07-16. Whether the user submitted a rating for this session.
+        last_updated_at:
+          type: string
+          format: date-time
+          description: Observed 2026-07-16.
+        timezone:
+          type: string
+          example: "America/Denver"
+          description: Observed 2026-07-16.
+        in_bed_start_time:
+          type: string
+          format: date-time
+          description: Observed 2026-07-16. Differs from `start_time` (sleep-detected start vs. in-bed start).
+        in_bed_end_time:
+          type: string
+          format: date-time
+          description: Observed 2026-07-16.
         sleep_summary:
           type: object
           properties:
@@ -1946,6 +2067,35 @@ components:
             awake_time:
               type: number
               description: Awake time in minutes
+            hypnogram:
+              type: array
+              items:
+                type: integer
+              description: |
+                Observed 2026-07-16. Per-epoch sleep-stage timeline (one
+                integer per ~30s epoch spanning the session). Integer meaning
+                not yet decoded against sleep_summary stage labels — plausibly
+                0=awake/light .. higher=deeper stage, but unconfirmed.
+        apnea:
+          type: object
+          description: |
+            Observed 2026-07-16. NEW block, not previously documented.
+            Plausibly the session-level breathing-disturbance signal.
+          properties:
+            ahi:
+              type: number
+              description: Apnea-Hypopnea Index (events per hour).
+            longest_event_seconds:
+              type: number
+            central_total_seconds:
+              type: number
+            obstructive_total_seconds:
+              type: number
+            values:
+              type: array
+              items:
+                type: number
+              description: Per-epoch series, same cadence as other session series arrays.
         heart_rate:
           type: object
           properties:
@@ -1955,6 +2105,8 @@ components:
               type: number
             max:
               type: number
+            axis:
+              $ref: "#/components/schemas/MetricAxis"
         breath_rate:
           type: object
           properties:
@@ -1964,6 +2116,8 @@ components:
               type: number
             max:
               type: number
+            axis:
+              $ref: "#/components/schemas/MetricAxis"
         hrv:
           type: object
           properties:
@@ -1974,6 +2128,8 @@ components:
               type: number
             max:
               type: number
+            axis:
+              $ref: "#/components/schemas/MetricAxis"
         movement:
           type: object
           properties:
@@ -1983,6 +2139,82 @@ components:
             total_seconds:
               type: number
               description: Total restless time in seconds
+            left_bed_seconds:
+              type: number
+              nullable: true
+        temperature:
+          type: object
+          properties:
+            values:
+              type: array
+              items:
+                type: number
+        temperature_control:
+          type: object
+          description: Observed 2026-07-16. NEW block, not previously documented. Shape mirrors `temperature`.
+          properties:
+            values:
+              type: array
+              items:
+                type: number
+        temperature_setpoint:
+          type: object
+          description: Observed 2026-07-16. NEW block, not previously documented. Shape mirrors `temperature`.
+          properties:
+            values:
+              type: array
+              items:
+                type: number
+        device:
+          type: object
+          description: Observed 2026-07-16. NEW block — embeds the owning device, previously only available via a separate /v1/devices call.
+          properties:
+            id:
+              type: string
+              format: uuid
+            serial_number:
+              type: string
+            name:
+              type: string
+            model:
+              type: string
+            type:
+              type: string
+            timezone:
+              type: string
+            orientation:
+              type: string
+        manual_confirmation:
+          type: object
+          description: |
+            Observed 2026-07-16. NEW block, not previously documented. Lists
+            the users eligible to confirm which side of a combined/ambiguous
+            session belongs to them — the partner-account user was present
+            here even though this response came from the primary account's
+            token, i.e. it reflects both linked accounts.
+          properties:
+            needs_confirmation:
+              type: boolean
+            status:
+              type: string
+              example: "pending"
+            users:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  first_name:
+                    type: string
+                  last_name:
+                    type: string
+                  name:
+                    type: string
+                  profile_image_url:
+                    type: string
+                    nullable: true
         user:
           type: object
           properties:
@@ -1995,6 +2227,231 @@ components:
               type: string
             email:
               type: string
+
+    MetricAxis:
+      type: object
+      description: Fixed display-range hint for charting a metric; not the observed min/max of the data itself.
+      properties:
+        min:
+          type: number
+        max:
+          type: number
+
+    InsightsV3Response:
+      type: object
+      description: |
+        Live-verified (2026-07-16) response shape from GET /v3/insights,
+        primary account only. Backs the "new sleep insights" trends/calendar
+        surface — see the endpoint description for details.
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        has_subscription:
+          type: boolean
+        bundle:
+          type: boolean
+          description: Unconfirmed meaning — observed true. Possibly denotes a bundled multi-device or multi-metric subscription tier.
+        timezone:
+          type: string
+          example: "America/Los_Angeles"
+        data_availability:
+          type: object
+          properties:
+            earliest_date:
+              type: string
+              format: date
+            latest_date:
+              type: string
+              format: date
+            latest_insight_date:
+              type: string
+              format: date
+        granularities:
+          type: object
+          description: Always observed with exactly these three keys.
+          properties:
+            day:
+              $ref: "#/components/schemas/InsightsV3Granularity"
+            week:
+              $ref: "#/components/schemas/InsightsV3Granularity"
+            month:
+              $ref: "#/components/schemas/InsightsV3Granularity"
+
+    InsightsV3Granularity:
+      type: object
+      properties:
+        range:
+          type: object
+          properties:
+            start_date:
+              type: string
+              format: date
+              nullable: true
+            end_date:
+              type: string
+              format: date
+              nullable: true
+            count:
+              type: integer
+        data:
+          type: object
+          description: |
+            Period-keyed map. Keys are ISO dates for `day`/`week` granularity
+            (week key = the week's start date) and "YYYY-MM" for `month`.
+          additionalProperties:
+            $ref: "#/components/schemas/InsightsV3Period"
+
+    InsightsV3Period:
+      type: object
+      properties:
+        period_key:
+          type: string
+        granularity:
+          type: string
+          example: "day"
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        overview:
+          $ref: "#/components/schemas/InsightsV3ScoreBlock"
+        days_with_data:
+          type: integer
+        previous_data_date:
+          type: string
+          format: date
+          nullable: true
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/InsightsV3ScoreBlock"
+        metrics:
+          type: object
+          description: |
+            Always observed with exactly these 8 keys. `consistency`,
+            `sleep_debt`, and `breathing_disturbances` are the new metrics
+            announced 2026-07-15; the rest supersede the equivalent
+            `/v2/insights` session fields with added trend/comparison data.
+          properties:
+            sleep_duration:
+              $ref: "#/components/schemas/InsightsV3Metric"
+            body_movements:
+              $ref: "#/components/schemas/InsightsV3Metric"
+            breathing_disturbances:
+              $ref: "#/components/schemas/InsightsV3Metric"
+            consistency:
+              $ref: "#/components/schemas/InsightsV3Metric"
+            sleep_debt:
+              $ref: "#/components/schemas/InsightsV3Metric"
+            hrv:
+              $ref: "#/components/schemas/InsightsV3Metric"
+            heart_rate:
+              $ref: "#/components/schemas/InsightsV3Metric"
+            breath_rate:
+              $ref: "#/components/schemas/InsightsV3Metric"
+
+    InsightsV3ScoreBlock:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        score:
+          type: integer
+          nullable: true
+        rating:
+          type: string
+          example: "Good"
+        color:
+          type: string
+          example: "positive"
+        award:
+          type: boolean
+        state:
+          type: string
+          example: "positive"
+
+    InsightsV3Metric:
+      type: object
+      description: |
+        Generic per-metric envelope shared by all 8 metrics under
+        `InsightsV3Period.metrics`. Not every field is populated for every
+        metric (e.g. `need` only appears on `sleep_debt`; `sessions` only
+        appears on the per-session metrics, not `consistency`/`sleep_debt`).
+      properties:
+        value:
+          type: number
+          nullable: true
+        need:
+          type: number
+          description: sleep_debt only — the computed sleep need baseline in minutes.
+        unit:
+          type: string
+          example: "min"
+        polarity:
+          type: string
+          enum: [higher_better, lower_better, neutral]
+        insight:
+          type: string
+          description: Human-readable summary string, as shown in the app UI.
+        comparisons:
+          type: object
+          properties:
+            vs_prior_day:
+              $ref: "#/components/schemas/InsightsV3Comparison"
+            vs_prior_week:
+              $ref: "#/components/schemas/InsightsV3Comparison"
+            vs_prior_month:
+              $ref: "#/components/schemas/InsightsV3Comparison"
+        series:
+          type: array
+          description: Per-day data points backing the period's chart; shape varies per metric (extra keys like `ratios`, `stages`, `movement_count`, `start`/`end` observed on different metrics).
+          items:
+            type: object
+        axis:
+          type: object
+          description: Display-range hint for charting; `kind` observed as "linear", "clock", or "diverging".
+        details:
+          type: object
+          nullable: true
+        show:
+          type: boolean
+        status:
+          type: string
+          nullable: true
+          description: sleep_debt only so far — observed "balanced" and "low".
+        state:
+          type: string
+          description: Observed "data" and "empty".
+        sessions:
+          type: array
+          items:
+            type: object
+            properties:
+              session_id:
+                type: string
+                format: uuid
+              average:
+                type: number
+                nullable: true
+              min:
+                type: number
+                nullable: true
+              max:
+                type: number
+                nullable: true
+              values:
+                type: array
+                nullable: true
+                items:
+                  type: number
+          description: |
+            Same session_id values as /v2/insights sessions — confirms this
+            endpoint aggregates the same underlying session data rather than
+            a separately-modeled source.
 
     NotificationPreferences:
       type: object

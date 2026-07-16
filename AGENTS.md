@@ -69,7 +69,8 @@ https://api1.orionbed.com
 | POST | `/v1/devices/{deviceId}/activate` | Bearer | Pair device to account. Body: `{"model": "OSCT001-1"}`. |
 | POST | `/v1/devices/{deviceId}/deactivate` | Bearer | Unpair device. |
 | POST | `/v1/devices/{deviceId}/update` | Bearer | Trigger firmware update. |
-| GET | `/v2/insights?from=&to=` | Bearer | NOT wrapped in `response`. Top-level: `{user_id, data: {date: {score, sessions[]}}, overview: {date: {score}}}` |
+| GET | `/v2/insights?from=&to=` | Bearer | NOT wrapped in `response`. Top-level: `{user_id, has_subscription, data: {date: {score, quality, color, sessions[]}}, overview: {date: {score, quality, color}}}`. Session shape has grown significantly since first documented — see "Real API Response Shapes" below. |
+| GET | `/v3/insights` | Bearer | **New 2026-07-16.** NOT wrapped in `response`. Pre-aggregated day/week/month trend data — backs the "new sleep insights" surface (consistency, sleep debt, breathing disturbances, calendar/trends view) announced 2026-07-15. Verified against the **primary account only**; partner side unverified (needs an interactive OTP login as the partner — not yet done). `from`/`to` params probed, did not change the returned window — treat as unverified/no-op. |
 
 ### Non-Working / Unverified Endpoints
 
@@ -97,14 +98,16 @@ https://api1.orionbed.com
 - `auto_turn_off`, `is_smart_temperature_active`
 - `override_date`, `is_override_available`, `is_override_applied`
 
-**Insights sessions** — each session has:
+**Insights sessions** (`/v2/insights`) — each session has:
 - `session_id`, `zone_id`, `is_in_progress`, `start_time`, `end_time`, `confidence`
-- `sleep_summary`: `{time_asleep, deep_sleep, rem_sleep, light_sleep, awake_time}` (minutes)
-- `heart_rate`: `{average, min, max, values[]}` (BPM)
-- `breath_rate`: `{average, min, max, values[]}` (breaths/min)
-- `hrv`: `{average, min, max, values[]}` (ms, often null)
+- `sleep_summary`: `{time_asleep, deep_sleep, rem_sleep, light_sleep, awake_time, hypnogram[]}` (minutes; `hypnogram` is a per-~30s-epoch integer stage timeline, meaning not yet decoded)
+- `heart_rate` / `breath_rate` / `hrv`: `{average, min, max, values[], axis: {min, max}}` (BPM / breaths-min / ms; HRV often null)
 - `movement`: `{total_seconds, movement_rate, left_bed_seconds, values[]}`
-- `temperature`: `{values[]}` (Celsius floats, ~3 per minute)
+- `temperature` / `temperature_control` / `temperature_setpoint`: each `{values[]}` (Celsius floats, ~3 per minute). The latter two are new (2026-07-16) and undecoded — plausibly control-loop target vs. active setpoint, unconfirmed.
+- `apnea`: **new (2026-07-16)**: `{ahi, longest_event_seconds, central_total_seconds, obstructive_total_seconds, values[]}` — plausibly the session-level breathing-disturbance signal (same `session_id` links to `/v3/insights`' `breathing_disturbances` metric)
+- Also new (2026-07-16), previously undocumented: `is_combined`, `combined_zone_ids` (dual-zone/occupancy detection, always `false`/`null` observed), `user_rating`, `user_fallasleep_timestamp`, `user_wakeup_timestamp`, `has_been_edited`, `has_been_rated` (manual session editing/rating — no known write endpoint yet), `last_updated_at`, `timezone`, `in_bed_start_time`, `in_bed_end_time`, `device: {id, serial_number, name, model, type, timezone, orientation}` (embedded device, previously only from `/v1/devices`), `manual_confirmation: {needs_confirmation, status, users[]}` (lists both the primary and partner account users — even on the primary account's own token, confirming session data is shared/linked across a paired household)
+
+**Insights v3 trends** (`/v3/insights`, new 2026-07-16) — top-level: `{user_id, has_subscription, bundle, timezone, data_availability: {earliest_date, latest_date, latest_insight_date}, granularities: {day, week, month}}`. Each granularity: `{range: {start_date, end_date, count}, data: {period_key: {period_key, granularity, start_date, end_date, overview: {score, rating, color, award, state}, days_with_data, previous_data_date, days[], metrics}}}`. `metrics` always has exactly 8 keys: `sleep_duration`, `body_movements`, `breathing_disturbances`, `consistency`, `sleep_debt`, `hrv`, `heart_rate`, `breath_rate` — each a `{value, unit, polarity, insight (human-readable string), comparisons: {vs_prior_day, vs_prior_week, vs_prior_month}, series[], axis, details, show, state, sessions[]}` envelope. `sleep_debt` additionally has `need` (computed baseline minutes) and `status` (`"balanced"`/`"low"` observed). `sessions[].session_id` matches `/v2/insights` session IDs, confirming `/v3/insights` re-aggregates the same underlying sessions rather than a separately modeled data source (spot-checked: v2 `time_asleep` 433min vs v3 `sleep_duration.value` 429min for the same session — minor rounding difference, not a distinct model).
 
 ### Key Gotchas
 
@@ -112,7 +115,8 @@ https://api1.orionbed.com
 - The auth verification endpoint was `/v1/auth/verify` when live-verified; the spec now says `/v1/auth/do`. Code tries both.
 - Refresh request body similarly sends both `refreshToken` (spec) and `refresh_token` (legacy) keys.
 - Token expiry uses `expires_at` Unix timestamp, NOT JWT parsing
-- Insights endpoint (`/v2/insights`) does NOT wrap in `response` — it's top-level
+- Insights endpoints (`/v2/insights`, `/v3/insights`) do NOT wrap in `response` — top-level
+- `/v3/insights` and its new metrics are verified against the **primary account only** (2026-07-16). Verifying the partner account requires an interactive OTP login as the partner, which wasn't available during this pass — re-check before assuming partner-side parity.
 - All other endpoints wrap data in `{"response": {...}, "success": true}`
 - Temperature values throughout the API are in **Celsius**
 - Device zones are `zone_a`/`zone_b`, not `left`/`right`
@@ -264,6 +268,8 @@ python orion_info.py --phone 15132015808
 ```
 Tokens cache to `~/.orion_tokens.json`. Use `--relogin` to force fresh auth.
 
+`orion_info.py` also always fetches `/v3/insights` (trends: consistency, sleep debt, breathing disturbances) alongside `/v2/insights` — no flag needed. To verify the partner side, run against the partner's own login (`--email`/`--phone` + `--relogin` for their account) — this has not yet been done.
+
 Additional `orion_info.py` flags:
 - `--insights-days N` — number of days of insights to fetch
 - `--set-away` / `--set-present` — toggle device power, then re-fetch devices/schedules to show changes
@@ -356,3 +362,6 @@ Notable:
 - Guest user management not supported
 - `OrionPowerSwitch` and `OrionScheduleSwitch` don't catch API errors — they propagate to the HA UI as failed-action notifications. `OrionAwayModeSwitch` specifically swallows the `400 "User has no previous device to return to"` that the server returns on a no-op toggle.
 - Topper sensor1 ↔ sensor2 to zone_a ↔ zone_b mapping is unverified — entities are named per sensor rather than per side until a split-occupancy capture confirms the mapping
+- `/v3/insights` (consistency, sleep debt, breathing disturbances, day/week/month trends) is documented and reachable but has **no integration support yet** — no coordinator fetch, entities, or sensors. See follow-up beads filed 2026-07-16 for scoped implementation work (each includes a partner-side variant).
+- `/v3/insights` partner-account parity is unverified — needs a live probe authenticated as the partner (interactive OTP), not yet done.
+- Device objects from `/v1/devices` now include an undocumented `capabilities: {sensors: {sleep_tracking, heart_rate, weight_detection}, alarms: {vibration, sound, temperature}, accessories: {blanket}}` block (observed 2026-07-16) — not yet added to the OpenAPI spec or surfaced anywhere; out of scope for the sleep-insights investigation, filed separately.

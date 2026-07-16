@@ -287,6 +287,15 @@ def get_insights(token: str, days: int = 7) -> Any:
     return _check(resp, "get_insights")
 
 
+def get_insights_v3(token: str) -> Any:
+    """GET /v3/insights — day/week/month trend data (consistency, sleep debt,
+    breathing disturbances). `from`/`to` params were probed and did not
+    change the returned window, so this always fetches the server's default
+    trailing window."""
+    resp = requests.get(_url("/v3/insights"), headers=_headers(token))
+    return _check(resp, "get_insights_v3")
+
+
 # ── away mode ──────────────────────────────────────────────────────────────────
 
 
@@ -1014,6 +1023,10 @@ def main() -> None:
     insights = get_insights(access_token, days=args.insights_days)
     if insights is not None:
         _pretty(f"Sleep Insights (last {args.insights_days} days)", insights)
+
+    insights_v3 = get_insights_v3(access_token)
+    if insights_v3 is not None:
+        _pretty("Sleep Insights v3 (trends: consistency/sleep debt/breathing)", insights_v3)
 
     # ── Away mode actions ──────────────────────────────────────────────
     if args.set_away or args.set_present:
