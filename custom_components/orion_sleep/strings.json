@@ -216,6 +216,9 @@
       "restless_time": {
         "name": "Restless Time"
       },
+      "breathing_disturbances": {
+        "name": "Breathing Disturbances"
+      },
       "partner_total_sleep_time": {
         "name": "Partner Total Sleep Time"
       },
@@ -242,6 +245,9 @@
       },
       "partner_restless_time": {
         "name": "Partner Restless Time"
+      },
+      "partner_breathing_disturbances": {
+        "name": "Partner Breathing Disturbances"
       },
       "bedtime": {
         "name": "Bedtime"

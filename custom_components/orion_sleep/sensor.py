@@ -14,7 +14,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -316,6 +316,7 @@ async def async_setup_entry(
                 OrionScheduleSensorEntity(coordinator, device_id, description)
             )
         entities.append(OrionCurrentTempOffsetSensor(coordinator, device_id))
+        entities.append(OrionBreathingDisturbancesSensor(coordinator, device_id))
         # Partner (second-side) parity — the same account-level insight,
         # schedule, and current-temp read-outs driven by the partner account.
         # Only created when a partner account is linked.
@@ -334,6 +335,11 @@ async def async_setup_entry(
                 )
             entities.append(
                 OrionCurrentTempOffsetSensor(
+                    coordinator, device_id, is_partner=True
+                )
+            )
+            entities.append(
+                OrionBreathingDisturbancesSensor(
                     coordinator, device_id, is_partner=True
                 )
             )
@@ -507,6 +513,73 @@ class OrionCurrentTempOffsetSensor(OrionBaseEntity, SensorEntity):
         if values:
             return self._celsius_to_offset(values[-1])
         return None
+
+
+class OrionBreathingDisturbancesSensor(OrionBaseEntity, SensorEntity):
+    """Breathing disturbances from the latest day's /v3/insights metrics.
+
+    Surfaces the pre-aggregated ``breathing_disturbances.value`` (total
+    disturbance time in seconds), along with the app's human-readable
+    ``insight`` string and ``details.low_seconds`` / ``high_seconds``
+    comparison range as extra attributes.
+
+    Also cross-checks the matching session's ``apnea.ahi`` (Apnea-Hypopnea
+    Index, events/hour) from ``/v2/insights`` — a more clinically meaningful
+    figure than the aggregated seconds total — and surfaces it as an
+    ``ahi`` attribute when present.
+    """
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_icon = "mdi:sleep-off"
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+        is_partner: bool = False,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._is_partner = is_partner
+        if is_partner:
+            self._attr_unique_id = f"{device_id}_partner_breathing_disturbances"
+            self._attr_translation_key = "partner_breathing_disturbances"
+        else:
+            self._attr_unique_id = f"{device_id}_breathing_disturbances"
+            self._attr_translation_key = "breathing_disturbances"
+
+    def _metric(self) -> dict | None:
+        if self._is_partner:
+            return self.coordinator.get_partner_breathing_disturbances()
+        return self.coordinator.get_breathing_disturbances()
+
+    def _session(self) -> dict | None:
+        if self._is_partner:
+            return self.coordinator.get_partner_latest_session()
+        return self.coordinator.get_latest_session()
+
+    @property
+    def native_value(self) -> float | None:
+        metric = self._metric()
+        if not metric:
+            return None
+        return metric.get("value")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        metric = self._metric()
+        if not metric:
+            return None
+        details = metric.get("details") or {}
+        apnea = (self._session() or {}).get("apnea") or {}
+        attrs: dict[str, Any] = {
+            "insight": metric.get("insight"),
+            "state": metric.get("state"),
+            "low_seconds": details.get("low_seconds"),
+            "high_seconds": details.get("high_seconds"),
+            "ahi": apnea.get("ahi"),
+        }
+        return {k: v for k, v in attrs.items() if v is not None} or None
 
 
 class OrionWebSocketStateSensor(OrionBaseEntity, SensorEntity):

@@ -306,6 +306,34 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
                         return {**session, "score": day_data.get("score")}
         return None
 
+    def get_breathing_disturbances(self) -> dict | None:
+        """Get the latest day's breathing_disturbances metric from v3 insights."""
+        return self._latest_v3_day_metric("insights_v3", "breathing_disturbances")
+
+    def get_partner_breathing_disturbances(self) -> dict | None:
+        """Get the latest day's breathing_disturbances metric for the partner.
+
+        Returns None when no partner is configured or the partner's v3
+        insights haven't loaded yet.
+        """
+        if not self.has_partner:
+            return None
+        return self._latest_v3_day_metric("partner_insights_v3", "breathing_disturbances")
+
+    def _latest_v3_day_metric(self, source_key: str, metric: str) -> dict | None:
+        """Get a named metric block from the latest day period of a v3 insights source."""
+        day_data = (
+            (self.data or {})
+            .get(source_key, {})
+            .get("granularities", {})
+            .get("day", {})
+            .get("data", {})
+        )
+        if not day_data:
+            return None
+        latest_key = sorted(day_data.keys(), reverse=True)[0]
+        return day_data[latest_key].get("metrics", {}).get(metric)
+
     def get_zone_live(self, device_id: str, zone_id: str) -> dict | None:
         """Return the live setpoint dict for a specific zone, or None.
 

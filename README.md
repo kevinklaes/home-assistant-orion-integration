@@ -123,8 +123,9 @@ When a partner (second-side) account is linked, the same four sliders are expose
 | HRV Left / Right | ms | per-side `hrv.average` from that zone's latest session (often null in real data) |
 | Body Movement Rate | /hr | `movement.movement_rate` |
 | Restless Time | formatted `Xm Ys` | `movement.total_seconds` |
+| Breathing Disturbances | sec | `/v3/insights` `metrics.breathing_disturbances.value`, with `insight`, `low_seconds` / `high_seconds`, `state`, and (cross-checked from the matching `/v2/insights` session) `ahi` attributes |
 
-When a partner (second-side) account is linked, the account-level insight sensors (Total/Deep/REM/Light Sleep, Awake, Heart Rate, Breath Rate, Body Movement, Restless), the Current Temperature Offset sensor, and the Sleep Session binary sensor are all exposed a second time with a `Partner` prefix, sourced from the partner's own latest session. (Sleep Score and HRV are already per-side.)
+When a partner (second-side) account is linked, the account-level insight sensors (Total/Deep/REM/Light Sleep, Awake, Heart Rate, Breath Rate, Body Movement, Restless, Breathing Disturbances), the Current Temperature Offset sensor, and the Sleep Session binary sensor are all exposed a second time with a `Partner` prefix, sourced from the partner's own latest session. (Sleep Score and HRV are already per-side.)
 
 ### Sensors — today's schedule
 
