@@ -958,11 +958,16 @@ paths:
       operationId: getInsightsV3
       summary: Get sleep insights with trends (v3)
       description: |
-        Live-verified (2026-07-16) against the primary account only — the
-        partner-side account is NOT yet confirmed to return the same shape
-        (partner login requires an interactive OTP code; re-check once that
-        can be exercised, e.g. via a fresh `orion_info.py --relogin` run
-        authenticated as the partner).
+        Response shape live-verified (2026-07-16) against the primary account
+        only. `OrionApiClient.get_insights_v3()` (api.py) is wired into the
+        coordinator poll for both the primary and partner accounts
+        (2026-07-16), using the same bearer-token client/error-handling path
+        already proven for partner `/v2/insights` — no account-type
+        special-casing exists in the client, so no divergence is expected.
+        The partner-side response shape specifically has not yet been
+        independently observed (an interactive OTP login as the partner
+        wasn't available during this pass); check config-entry diagnostics
+        after a live partner poll to confirm.
 
         Backs the "new sleep insights" surface announced 2026-07-15
         (consistency, sleep debt, breathing disturbances, calendar/trends
@@ -2273,8 +2278,9 @@ components:
       type: object
       description: |
         Live-verified (2026-07-16) response shape from GET /v3/insights,
-        primary account only. Backs the "new sleep insights" trends/calendar
-        surface — see the endpoint description for details.
+        primary account only. Now also fetched for the partner account by
+        the coordinator (2026-07-16); partner-side shape not yet
+        independently observed — see the endpoint description for details.
       properties:
         user_id:
           type: string

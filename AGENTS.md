@@ -70,7 +70,7 @@ https://api1.orionbed.com
 | POST | `/v1/devices/{deviceId}/deactivate` | Bearer | Unpair device. |
 | POST | `/v1/devices/{deviceId}/update` | Bearer | Trigger firmware update. |
 | GET | `/v2/insights?from=&to=` | Bearer | NOT wrapped in `response`. Top-level: `{user_id, has_subscription, data: {date: {score, quality, color, sessions[]}}, overview: {date: {score, quality, color}}}`. Session shape has grown significantly since first documented — see "Real API Response Shapes" below. |
-| GET | `/v3/insights` | Bearer | **New 2026-07-16.** NOT wrapped in `response`. Pre-aggregated day/week/month trend data — backs the "new sleep insights" surface (consistency, sleep debt, breathing disturbances, calendar/trends view) announced 2026-07-15. Verified against the **primary account only**; partner side unverified (needs an interactive OTP login as the partner — not yet done). `from`/`to` params probed, did not change the returned window — treat as unverified/no-op. |
+| GET | `/v3/insights` | Bearer | **New 2026-07-16.** NOT wrapped in `response`. Pre-aggregated day/week/month trend data — backs the "new sleep insights" surface (consistency, sleep debt, breathing disturbances, calendar/trends view) announced 2026-07-15. Response shape live-verified against the **primary account only**. `api.py`'s `get_insights_v3()` is now wired into the coordinator poll for both the primary and partner `OrionApiClient` instances (2026-07-16) — same bearer-token client/error-handling path already proven for partner `/v2/insights` — but the partner-side *response shape* specifically has not yet been independently observed (partner OTP re-login wasn't available during this pass, and probing from outside the running integration isn't possible). No account-type special-casing exists anywhere in the client, so no divergence is expected; treat as reasoned-not-observed until the next partner poll's diagnostics are checked. `from`/`to` params probed, did not change the returned window — treat as unverified/no-op. |
 
 ### Non-Working / Unverified Endpoints
 
@@ -116,7 +116,7 @@ https://api1.orionbed.com
 - Refresh request body similarly sends both `refreshToken` (spec) and `refresh_token` (legacy) keys.
 - Token expiry uses `expires_at` Unix timestamp, NOT JWT parsing
 - Insights endpoints (`/v2/insights`, `/v3/insights`) do NOT wrap in `response` — top-level
-- `/v3/insights` and its new metrics are verified against the **primary account only** (2026-07-16). Verifying the partner account requires an interactive OTP login as the partner, which wasn't available during this pass — re-check before assuming partner-side parity.
+- `/v3/insights` and its new metrics are response-shape-verified against the **primary account only** (2026-07-16). The coordinator now also fetches it for the partner account (2026-07-16) via the same client path already proven for partner `/v2/insights`; check partner-side diagnostics/logs after a live poll before treating the shape itself as independently confirmed.
 - All other endpoints wrap data in `{"response": {...}, "success": true}`
 - Temperature values throughout the API are in **Celsius**
 - Device zones are `zone_a`/`zone_b`, not `left`/`right`
@@ -154,6 +154,8 @@ coordinator._async_update_data() -- polls every N seconds:
   4. get_live_device(serial) per device (skipped when WS is fresh)
   5. get_sleep_schedules() --> data["schedules"]
   6. get_insights(days=N)  --> data["insights"]
+  7. get_insights_v3()     --> data["insights_v3"]
+  (partner client, when configured, repeats 5-7 into the partner_* keys)
        |
        v
 Per-device live WebSocket (wss://live.api1.orionbed.com/device/<serial>):
@@ -268,7 +270,7 @@ python orion_info.py --phone 15132015808
 ```
 Tokens cache to `~/.orion_tokens.json`. Use `--relogin` to force fresh auth.
 
-`orion_info.py` also always fetches `/v3/insights` (trends: consistency, sleep debt, breathing disturbances) alongside `/v2/insights` — no flag needed. To verify the partner side, run against the partner's own login (`--email`/`--phone` + `--relogin` for their account) — this has not yet been done.
+`orion_info.py` also always fetches `/v3/insights` (trends: consistency, sleep debt, breathing disturbances) alongside `/v2/insights` — no flag needed. This standalone script can only exercise the account it logs in as; verifying the partner side through it would require an interactive OTP login as the partner (`--email`/`--phone` + `--relogin` for their account), which wasn't available during this pass. The coordinator (`coordinator.py`) takes a different path that sidesteps this: it already holds an authenticated `OrionApiClient` for the partner (`self._partner_api_client`, used every poll for `/v2/insights`), and now calls `get_insights_v3()` through it too — so partner-side `/v3/insights` parity gets exercised on every live poll without needing OTP.
 
 Additional `orion_info.py` flags:
 - `--insights-days N` — number of days of insights to fetch
@@ -362,6 +364,6 @@ Notable:
 - Guest user management not supported
 - `OrionPowerSwitch` and `OrionScheduleSwitch` don't catch API errors — they propagate to the HA UI as failed-action notifications. `OrionAwayModeSwitch` specifically swallows the `400 "User has no previous device to return to"` that the server returns on a no-op toggle.
 - Topper sensor1 ↔ sensor2 to zone_a ↔ zone_b mapping is unverified — entities are named per sensor rather than per side until a split-occupancy capture confirms the mapping
-- `/v3/insights` (consistency, sleep debt, breathing disturbances, day/week/month trends) is documented and reachable but has **no integration support yet** — no coordinator fetch, entities, or sensors. See follow-up beads filed 2026-07-16 for scoped implementation work (each includes a partner-side variant).
-- `/v3/insights` partner-account parity is unverified — needs a live probe authenticated as the partner (interactive OTP), not yet done.
+- `/v3/insights` (consistency, sleep debt, breathing disturbances, day/week/month trends) is documented and now fetched by the coordinator for both the primary and partner accounts (`data["insights_v3"]` / `data["partner_insights_v3"]`, added 2026-07-16) but has **no entities/sensors yet**. See follow-up beads filed 2026-07-16 for scoped sensor implementation work (each includes a partner-side variant).
+- `/v3/insights` partner-account response shape has not been independently observed (would need either an interactive partner OTP login or checking config-entry diagnostics after a live poll) — but it now runs through the identical client/error-handling path already proven for partner `/v2/insights`, so no divergence is expected.
 - Device objects from `/v1/devices` include a `capabilities: {sensors: {sleep_tracking, heart_rate, weight_detection}, alarms: {vibration, sound, temperature}, accessories: {blanket}}` block (observed 2026-07-16, now documented in `openapi.yaml`'s `Device` schema). It is **not yet plumbed into the integration** — `sensor.py`/`binary_sensor.py` entity setup (`async_setup_entry`) unconditionally creates the same fixed entity set (heart-rate, breath-rate, etc.) for every device rather than reading `device["capabilities"]` to skip sensors/alarms/accessories a given device doesn't support. Only one device has been observed so its `capabilities` values are all `true`/present — there's no confirmed example of a device with a `false` flag yet, so gating logic can't be verified against real heterogeneous data. Treat this as a follow-up: gate entity creation per-device once a device with a differing capability set is observed.

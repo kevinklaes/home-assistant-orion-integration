@@ -307,6 +307,26 @@ class OrionApiClient:
         }
         return await self._request("GET", "/v2/insights", params=params)
 
+    async def get_insights_v3(self) -> dict:
+        """GET /v3/insights — pre-aggregated day/week/month trend insights.
+
+        Real shape: {user_id, has_subscription, bundle, timezone,
+        data_availability: {earliest_date, latest_date, latest_insight_date},
+        granularities: {day, week, month}}, each granularity a
+        {range, data: {period_key: {..., metrics}}} map. `metrics` always has
+        8 keys: sleep_duration, body_movements, breathing_disturbances,
+        consistency, sleep_debt, hrv, heart_rate, breath_rate.
+        Note: NOT wrapped in "response" key. `from`/`to` params were probed
+        and did not change the returned window, so this call takes none.
+
+        This is the same auth/client path used for every other endpoint
+        (including /v2/insights, which is already polled successfully for
+        both the primary and partner accounts) — no account-type
+        special-casing is expected server-side.
+        """
+        await self.ensure_valid_token()
+        return await self._request("GET", "/v3/insights")
+
     # ── Actions ───────────────────────────────────────────────────────
 
     async def set_temperature(

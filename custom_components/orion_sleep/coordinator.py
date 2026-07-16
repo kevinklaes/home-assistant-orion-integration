@@ -149,7 +149,9 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         data: dict = {
             "schedules": {},
             "insights": {},
+            "insights_v3": {},
             "partner_insights": {},
+            "partner_insights_v3": {},
             "partner_schedules": {},
         }
 
@@ -221,6 +223,13 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         except (OrionApiError, OrionConnectionError) as err:
             _LOGGER.warning("Failed to fetch insights: %s", err)
 
+        try:
+            data["insights_v3"] = await self.api_client.get_insights_v3()
+        except OrionAuthError as err:
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except (OrionApiError, OrionConnectionError) as err:
+            _LOGGER.warning("Failed to fetch v3 insights: %s", err)
+
         if self._partner_api_client is not None:
             try:
                 await self._partner_api_client.ensure_valid_token()
@@ -229,6 +238,9 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
                     await self._refresh_partner_user()
                 data["partner_insights"] = await self._partner_api_client.get_insights(
                     days=insights_days
+                )
+                data["partner_insights_v3"] = (
+                    await self._partner_api_client.get_insights_v3()
                 )
                 data["partner_schedules"] = (
                     await self._partner_api_client.get_sleep_schedules()
