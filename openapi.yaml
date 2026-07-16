@@ -1723,6 +1723,38 @@ components:
         batteryLevel:
           type: number
           format: float
+        capabilities:
+          type: object
+          description: |
+            Observed 2026-07-16. NEW block, not previously documented.
+            Declares which sensors, alarms, and accessories this device
+            supports. Implies devices are not all identical — a device
+            with `sensors.heart_rate: false`, for example, should not be
+            assumed to expose a heart-rate reading.
+          properties:
+            sensors:
+              type: object
+              properties:
+                sleep_tracking:
+                  type: boolean
+                heart_rate:
+                  type: boolean
+                weight_detection:
+                  type: boolean
+            alarms:
+              type: object
+              properties:
+                vibration:
+                  type: boolean
+                sound:
+                  type: boolean
+                temperature:
+                  type: boolean
+            accessories:
+              type: object
+              properties:
+                blanket:
+                  type: boolean
 
     LiveZoneUpdate:
       type: object
