@@ -132,8 +132,9 @@ When a partner (second-side) account is linked, the account-level insight sensor
 | Entity | Unit | Source |
 |---|---|---|
 | Consistency | % | `metrics.consistency.value` from the day granularity's latest period, with an `insight` attribute plus `vs_prior_day` / `vs_prior_week` / `vs_prior_month` trend-comparison attributes |
+| Sleep Debt | min | `metrics.sleep_debt.value` (accumulated sleep shortfall) from the day granularity's latest period, with `need` (computed sleep-need baseline, minutes), `status` (`balanced`/`low`), `insight`, and the same trend-comparison attributes |
 
-When a partner (second-side) account is linked, a Partner Consistency sensor is exposed too, sourced from the partner's own `/v3/insights` data.
+These sensors read unknown when the account has no active subscription or the metric's `state` is `empty` (no data for the period). When a partner (second-side) account is linked, Partner Consistency and Partner Sleep Debt sensors are exposed too, sourced from the partner's own `/v3/insights` data.
 
 ### Sensors — trends (calendar/trends view, week/month granularity)
 

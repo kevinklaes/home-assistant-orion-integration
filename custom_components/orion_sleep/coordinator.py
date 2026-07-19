@@ -289,7 +289,7 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
 
     def get_consistency_metric(self) -> dict | None:
         """Get the day granularity's latest consistency metric (primary account)."""
-        return self._latest_day_metric("insights_v3", "consistency")
+        return self._latest_v3_day_metric("insights_v3", "consistency")
 
     def get_partner_consistency_metric(self) -> dict | None:
         """Get the day granularity's latest consistency metric (partner account).
@@ -299,21 +299,7 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         """
         if not self.has_partner:
             return None
-        return self._latest_day_metric("partner_insights_v3", "consistency")
-
-    def _latest_day_metric(self, source_key: str, metric_key: str) -> dict | None:
-        """Get a named metric from the day granularity's latest period."""
-        day_data = (
-            (self.data or {})
-            .get(source_key, {})
-            .get("granularities", {})
-            .get("day", {})
-            .get("data", {})
-        )
-        if not day_data:
-            return None
-        latest_key = max(day_data.keys())
-        return day_data[latest_key].get("metrics", {}).get(metric_key)
+        return self._latest_v3_day_metric("partner_insights_v3", "consistency")
 
     def get_latest_session_for_zone(self, zone_id: str) -> dict | None:
         """Get the most recent sleep session for a specific zone.
@@ -348,19 +334,39 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
             return None
         return self._latest_v3_day_metric("partner_insights_v3", "breathing_disturbances")
 
+    def get_sleep_debt_metric(self) -> dict | None:
+        """Get the day granularity's latest sleep_debt metric (primary account)."""
+        return self._latest_v3_day_metric("insights_v3", "sleep_debt")
+
+    def get_partner_sleep_debt_metric(self) -> dict | None:
+        """Get the day granularity's latest sleep_debt metric (partner account).
+
+        Returns None when no partner is configured or the partner's v3
+        insights haven't loaded yet.
+        """
+        if not self.has_partner:
+            return None
+        return self._latest_v3_day_metric("partner_insights_v3", "sleep_debt")
+
     def _latest_v3_day_metric(self, source_key: str, metric: str) -> dict | None:
-        """Get a named metric block from the latest day period of a v3 insights source."""
-        day_data = (
-            (self.data or {})
-            .get(source_key, {})
-            .get("granularities", {})
-            .get("day", {})
-            .get("data", {})
-        )
+        """Get a named metric block from the latest day period of a v3 insights source.
+
+        Returns None when the account has no active subscription (the API
+        still answers but the trend metrics aren't computed) or when the
+        metric's own ``state`` is ``"empty"`` (no data for the period), so
+        the backing sensors read unknown rather than a stale envelope.
+        """
+        source = (self.data or {}).get(source_key, {})
+        if source.get("has_subscription") is False:
+            return None
+        day_data = source.get("granularities", {}).get("day", {}).get("data", {})
         if not day_data:
             return None
         latest_key = sorted(day_data.keys(), reverse=True)[0]
-        return day_data[latest_key].get("metrics", {}).get(metric)
+        metric_data = day_data[latest_key].get("metrics", {}).get(metric)
+        if isinstance(metric_data, dict) and metric_data.get("state") == "empty":
+            return None
+        return metric_data
 
     def get_weekly_insights(self) -> dict | None:
         """Get the most recent week-granularity period from v3 insights."""

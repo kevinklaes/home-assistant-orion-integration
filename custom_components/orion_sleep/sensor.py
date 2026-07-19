@@ -356,6 +356,7 @@ async def async_setup_entry(
         entities.append(OrionCurrentTempOffsetSensor(coordinator, device_id))
         entities.append(OrionBreathingDisturbancesSensor(coordinator, device_id))
         entities.append(OrionConsistencySensor(coordinator, device_id))
+        entities.append(OrionSleepDebtSensor(coordinator, device_id))
         for granularity in ("week", "month"):
             entities.append(
                 OrionTrendScoreSensor(coordinator, device_id, granularity)
@@ -388,6 +389,9 @@ async def async_setup_entry(
             )
             entities.append(
                 OrionConsistencySensor(coordinator, device_id, is_partner=True)
+            )
+            entities.append(
+                OrionSleepDebtSensor(coordinator, device_id, is_partner=True)
             )
             for granularity in ("week", "month"):
                 entities.append(
@@ -690,6 +694,68 @@ class OrionConsistencySensor(OrionBaseEntity, SensorEntity):
             if value is not None:
                 attrs[key] = value
         return attrs or None
+
+
+class OrionSleepDebtSensor(OrionBaseEntity, SensorEntity):
+    """Sleep debt from the ``/v3/insights`` trends endpoint.
+
+    Reads ``metrics.sleep_debt`` from the day granularity's latest period —
+    accumulated sleep shortfall in minutes against the app's computed sleep
+    need baseline. The baseline (``need``, minutes), the app's qualitative
+    ``status`` ("balanced"/"low"), its human-readable ``insight`` string,
+    and the trend comparisons are surfaced as extra attributes. Reflects
+    the partner account's own value when ``is_partner`` is set.
+    """
+
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:scale-balance"
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+        is_partner: bool = False,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._is_partner = is_partner
+        if is_partner:
+            self._attr_translation_key = "partner_sleep_debt"
+            self._attr_unique_id = f"{device_id}_partner_sleep_debt"
+        else:
+            self._attr_translation_key = "sleep_debt"
+            self._attr_unique_id = f"{device_id}_sleep_debt"
+
+    def _metric(self) -> dict | None:
+        if self._is_partner:
+            return self.coordinator.get_partner_sleep_debt_metric()
+        return self.coordinator.get_sleep_debt_metric()
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the accumulated sleep debt in minutes."""
+        metric = self._metric()
+        if not metric:
+            return None
+        return metric.get("value")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return need/status/insight and trend comparisons."""
+        metric = self._metric()
+        if not metric:
+            return None
+        attrs: dict[str, Any] = {
+            "need": metric.get("need"),
+            "status": metric.get("status"),
+            "insight": metric.get("insight"),
+        }
+        comparisons = metric.get("comparisons") or {}
+        for key in ("vs_prior_day", "vs_prior_week", "vs_prior_month"):
+            value = comparisons.get(key)
+            if value is not None:
+                attrs[key] = value
+        return {k: v for k, v in attrs.items() if v is not None} or None
 
 
 # Distinct icon per granularity so the two trend sensors are visually
