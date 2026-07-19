@@ -35,11 +35,20 @@ class OrionApiClient:
         access_token: str | None = None,
         refresh_token: str | None = None,
         expires_at: float = 0,
+        *,
+        is_api_key: bool = False,
     ) -> None:
         self._session = session
         self._access_token = access_token
         self._refresh_token = refresh_token
         self._expires_at = expires_at
+        # When True, ``access_token`` holds a long-lived Orion API key rather
+        # than a short-lived OTP JWT. API keys never expire and have no refresh
+        # token, so ``ensure_valid_token``/``_refresh_tokens`` become no-ops /
+        # hard failures. The key is still sent as ``Authorization: Bearer``
+        # (verified against the live API) and as the WS ``token=`` param, so no
+        # other code path needs to special-case it.
+        self._is_api_key = is_api_key
         self._token_refresh_callback: Callable[[str, str, float], None] | None = None
 
     def set_token_refresh_callback(
@@ -205,6 +214,11 @@ class OrionApiClient:
 
     async def ensure_valid_token(self) -> None:
         """Refresh the access token if it is expired or about to expire."""
+        if self._is_api_key:
+            # API keys are long-lived and have no refresh flow. A revoked key
+            # surfaces as a 401 on the next request (-> OrionAuthError), which
+            # the coordinator turns into ConfigEntryAuthFailed / re-auth.
+            return
         if not self._token_expired():
             return
         await self._refresh_tokens()
@@ -216,6 +230,11 @@ class OrionApiClient:
         so the request works regardless of which key the live API requires.
         Response is parsed by _extract_tokens which handles all known shapes.
         """
+        if self._is_api_key:
+            # Should never be reached (ensure_valid_token short-circuits), but
+            # the WS 401 path calls this directly — fail loudly rather than
+            # attempting a refresh that cannot work for an API key.
+            raise OrionAuthError("API keys cannot be refreshed")
         if not self._refresh_token:
             raise OrionAuthError("No refresh token available")
 

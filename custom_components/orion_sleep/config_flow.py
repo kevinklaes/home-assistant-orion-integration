@@ -19,12 +19,17 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import OrionApiClient, OrionApiError, OrionAuthError, OrionConnectionError
 from .const import (
+    AUTH_METHOD_API_KEY,
+    AUTH_METHOD_EMAIL,
+    AUTH_METHOD_PHONE,
     CONF_ACCESS_TOKEN,
+    CONF_API_KEY,
     CONF_AUTH_METHOD,
     CONF_AUTH_VALUE,
     CONF_EXPIRES_AT,
     CONF_INSIGHTS_DAYS,
     CONF_PARTNER_ACCESS_TOKEN,
+    CONF_PARTNER_API_KEY,
     CONF_PARTNER_AUTH_METHOD,
     CONF_PARTNER_AUTH_VALUE,
     CONF_PARTNER_CONFIGURED,
@@ -40,9 +45,6 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-AUTH_METHOD_EMAIL = "email"
-AUTH_METHOD_PHONE = "phone"
 
 # Orion's auth endpoint requires a full US phone number including the leading
 # country code ("1"), e.g. 15132015808. Anything shorter is rejected server-side.
@@ -74,11 +76,13 @@ class OrionSleepConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Step 1: User picks login method (email or phone)."""
+        """Step 1: User picks login method (email, phone, or API key)."""
         if user_input is not None:
             self._auth_method = user_input[CONF_AUTH_METHOD]
             if self._auth_method == AUTH_METHOD_EMAIL:
                 return await self.async_step_email()
+            if self._auth_method == AUTH_METHOD_API_KEY:
+                return await self.async_step_api_key()
             return await self.async_step_phone()
 
         return self.async_show_form(
@@ -89,10 +93,67 @@ class OrionSleepConfigFlow(ConfigFlow, domain=DOMAIN):
                         {
                             AUTH_METHOD_EMAIL: "Email",
                             AUTH_METHOD_PHONE: "Phone",
+                            AUTH_METHOD_API_KEY: "API key",
                         }
                     ),
                 }
             ),
+        )
+
+    async def async_step_api_key(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Step 1c: User pastes a long-lived API key from the Orion web portal.
+
+        The key is validated by fetching the account profile (GET /v1/auth/me);
+        the returned email is used as the unique_id/title so an account added
+        via API key can't be duplicated by the OTP flow (or vice versa).
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            api_key = user_input[CONF_API_KEY].strip()
+            session = async_get_clientsession(self.hass)
+            client = OrionApiClient(session=session, access_token=api_key, is_api_key=True)
+            try:
+                user = await client.get_current_user()
+            except OrionAuthError:
+                errors["base"] = "invalid_api_key"
+            except OrionConnectionError:
+                errors["base"] = "cannot_connect"
+            except OrionApiError:
+                errors["base"] = "unknown"
+            else:
+                email = (user.get("email") or "").strip()
+                unique_id = email.lower() if email else api_key
+                await self.async_set_unique_id(unique_id)
+                if self._reauth_entry is None:
+                    self._abort_if_unique_id_configured()
+
+                data = {
+                    CONF_AUTH_METHOD: AUTH_METHOD_API_KEY,
+                    CONF_AUTH_VALUE: email,
+                    CONF_API_KEY: api_key,
+                }
+
+                if self._reauth_entry:
+                    self.hass.config_entries.async_update_entry(
+                        self._reauth_entry, data=data
+                    )
+                    await self.hass.config_entries.async_reload(
+                        self._reauth_entry.entry_id
+                    )
+                    return self.async_abort(reason="reauth_successful")
+
+                return self.async_create_entry(
+                    title=f"Orion Sleep ({email or 'API key'})",
+                    data=data,
+                )
+
+        return self.async_show_form(
+            step_id="api_key",
+            data_schema=vol.Schema({vol.Required(CONF_API_KEY): str}),
+            errors=errors,
         )
 
     async def _async_send_code(self, auth_value: str) -> ConfigFlowResult | None:
@@ -245,6 +306,9 @@ class OrionSleepConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         self._auth_method = entry_data.get(CONF_AUTH_METHOD)
         self._auth_value = entry_data.get(CONF_AUTH_VALUE)
+        if self._auth_method == AUTH_METHOD_API_KEY:
+            # API keys can't be refreshed — prompt for a freshly minted key.
+            return await self.async_step_api_key()
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -306,7 +370,10 @@ class OrionSleepOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show polling/insight/zone options plus a partner-account action."""
-        has_partner = CONF_PARTNER_ACCESS_TOKEN in self._config_entry.data
+        has_partner = (
+            CONF_PARTNER_ACCESS_TOKEN in self._config_entry.data
+            or CONF_PARTNER_API_KEY in self._config_entry.data
+        )
 
         if user_input is not None:
             action = user_input.pop(_CONF_PARTNER_ACTION, _PARTNER_ACTION_KEEP)
@@ -320,6 +387,7 @@ class OrionSleepOptionsFlow(OptionsFlow):
                         CONF_PARTNER_ACCESS_TOKEN,
                         CONF_PARTNER_REFRESH_TOKEN,
                         CONF_PARTNER_EXPIRES_AT,
+                        CONF_PARTNER_API_KEY,
                         CONF_PARTNER_AUTH_METHOD,
                         CONF_PARTNER_AUTH_VALUE,
                     }
@@ -384,11 +452,13 @@ class OrionSleepOptionsFlow(OptionsFlow):
     async def async_step_partner_method(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Step P1: choose email or phone for the partner account."""
+        """Step P1: choose email, phone, or API key for the partner account."""
         if user_input is not None:
             self._partner_auth_method = user_input[CONF_AUTH_METHOD]
             if self._partner_auth_method == AUTH_METHOD_EMAIL:
                 return await self.async_step_partner_email()
+            if self._partner_auth_method == AUTH_METHOD_API_KEY:
+                return await self.async_step_partner_api_key()
             return await self.async_step_partner_phone()
 
         return self.async_show_form(
@@ -401,10 +471,67 @@ class OrionSleepOptionsFlow(OptionsFlow):
                         {
                             AUTH_METHOD_EMAIL: "Email",
                             AUTH_METHOD_PHONE: "Phone",
+                            AUTH_METHOD_API_KEY: "API key",
                         }
                     ),
                 }
             ),
+        )
+
+    # ── Partner auth: API key ─────────────────────────────────────────────────
+
+    async def async_step_partner_api_key(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Step P2c: collect and validate a partner API key, then finish.
+
+        Unlike the OTP partner path there is no verification code, so this step
+        validates the key, stores it, and commits the pending options directly.
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            api_key = user_input[CONF_API_KEY].strip()
+            session = async_get_clientsession(self.hass)
+            client = OrionApiClient(
+                session=session, access_token=api_key, is_api_key=True
+            )
+            try:
+                user = await client.get_current_user()
+            except OrionAuthError:
+                errors["base"] = "invalid_api_key"
+            except OrionConnectionError:
+                errors["base"] = "cannot_connect"
+            except OrionApiError:
+                errors["base"] = "unknown"
+            else:
+                # Replacing an OTP partner? Drop the stale token keys so the two
+                # auth styles never coexist in entry.data for one partner.
+                new_data = {
+                    k: v
+                    for k, v in self._config_entry.data.items()
+                    if k
+                    not in {
+                        CONF_PARTNER_ACCESS_TOKEN,
+                        CONF_PARTNER_REFRESH_TOKEN,
+                        CONF_PARTNER_EXPIRES_AT,
+                    }
+                }
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    data={
+                        **new_data,
+                        CONF_PARTNER_AUTH_METHOD: AUTH_METHOD_API_KEY,
+                        CONF_PARTNER_AUTH_VALUE: (user.get("email") or "").strip(),
+                        CONF_PARTNER_API_KEY: api_key,
+                    },
+                )
+                return self.async_create_entry(data=self._pending_options)
+
+        return self.async_show_form(
+            step_id="partner_api_key",
+            data_schema=vol.Schema({vol.Required(CONF_API_KEY): str}),
+            errors=errors,
         )
 
     # ── Partner auth: email ───────────────────────────────────────────────────
@@ -500,11 +627,17 @@ class OrionSleepOptionsFlow(OptionsFlow):
                 errors["base"] = "unknown"
             else:
                 # Persist partner tokens in entry.data (not options — tokens
-                # are auth state, not user-visible settings).
+                # are auth state, not user-visible settings). Drop any stale
+                # partner API key so an OTP partner never coexists with a key.
+                new_data = {
+                    k: v
+                    for k, v in self._config_entry.data.items()
+                    if k != CONF_PARTNER_API_KEY
+                }
                 self.hass.config_entries.async_update_entry(
                     self._config_entry,
                     data={
-                        **self._config_entry.data,
+                        **new_data,
                         CONF_PARTNER_AUTH_METHOD: self._partner_auth_method,
                         CONF_PARTNER_AUTH_VALUE: self._partner_auth_value,
                         CONF_PARTNER_ACCESS_TOKEN: tokens["access_token"],

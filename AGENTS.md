@@ -19,7 +19,7 @@ home-assistant-orion-integration/
 │       ├── const.py                   # DOMAIN, config keys, defaults, temp lookup table
 │       ├── api.py                     # Async aiohttp API client
 │       ├── coordinator.py             # DataUpdateCoordinator + data helpers
-│       ├── config_flow.py             # Three-step auth flow + options flow
+│       ├── config_flow.py             # Auth flow (email/phone OTP or API key) + options flow
 │       ├── entity.py                  # Base entity with DeviceInfo + temp conversion helpers
 │       ├── climate.py                 # Bed temperature control
 │       ├── sensor.py                  # Sleep insight + schedule + offset + WS state sensors (18 per device)
@@ -56,7 +56,10 @@ https://api1.orionbed.com
 | POST | `/v1/auth/code` | No | Send verification code to email/phone |
 | POST | `/v1/auth/do` **or** `/v1/auth/verify` | No | Verify code, get tokens. The spec now documents `/v1/auth/do` (from Android bytecode); the previously live-verified endpoint was `/v1/auth/verify`. Code tries `/v1/auth/do` first and falls back to `/v1/auth/verify`. Response handled in all known shapes — see `_extract_tokens`. |
 | POST | `/v1/auth/refresh` | No | Refresh tokens. Body sends both `refreshToken` (current spec) and `refresh_token` (legacy) so the request works regardless of which key the live API requires. Response handled by `_extract_tokens`. |
-| GET | `/v1/auth/me` | Bearer | User profile. Wrapped in `{"response": {...}, "success": true}` |
+| GET | `/v1/auth/me` | Bearer | User profile. Wrapped in `{"response": {...}, "success": true}`. Also used to validate pasted API keys during HA config flow. |
+| GET | `/v1/api-keys` | Bearer | List API key metadata (`response.api_keys[]`). No raw keys. Live-verified 2026-07-19. |
+| POST | `/v1/api-keys` | Bearer | Create API key. Body: `{"name": "..."}` (required). Returns raw `api_key` once in `response`. Format: `os_live_...`, long-lived. |
+| DELETE | `/v1/api-keys/{id}` | Bearer | Revoke key. Live-verified 2026-07-19. |
 | GET | `/v1/devices` | Bearer | Devices at `response.devices[]`. Fields: `id`, `serial_number`, `name`, `model`, `zones[]`, `temperature_range`, `temperature_scale` |
 | GET | `/v1/sleep-schedules` | Bearer | Schedules at `response.schedules.{user_id}[]` (7 days). Also `today_sleep_schedule.{user_id}` and `response.recommendations.{user_id}[]` — **Orion Intelligence temperature recommendations** (live-verified 2026-07-19; see "Real API Response Shapes" below). |
 | PUT | `/v1/sleep-schedules` | Bearer | Update schedule. Body: `{"schedules": [{"day": N, field: value}]}`. Partial updates work (only specified field changes). |
@@ -133,7 +136,7 @@ https://api1.orionbed.com
 - **Per-poll data**: Device list re-fetched each poll to detect away/present (power) state changes
 - **Token persistence**: Refresh callback updates `config_entry.data` so tokens survive HA restarts
 - **Error handling**: Each polled endpoint has independent try/except — one failing doesn't break the others. Auth errors (`OrionAuthError`) always raise `ConfigEntryAuthFailed` to trigger re-auth flow.
-- **Auth flow**: Three-step config flow (pick method -> enter email/phone -> enter verification code) + re-auth support
+- **Auth flow**: Email/phone OTP (pick method → enter address → verification code) **or API key** (paste `os_live_...` from https://app.orionsleep.com/api-keys, validated via `GET /v1/auth/me`). Re-auth for API keys prompts for a freshly minted key (no refresh). Partner account supports the same methods in the options flow.
 - **Options flow**: Configurable `scan_interval` (60-3600s) and `insights_days` (1-30 days)
 - **Temperature conversion**: `OrionBaseEntity` provides `_celsius_to_offset()` and `_offset_to_celsius()` using per-device lookup table (falls back to `DEFAULT_RELATIVE_TEMP_TABLE` in `const.py`)
 

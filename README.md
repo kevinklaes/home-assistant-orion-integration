@@ -17,7 +17,7 @@ Custom [Home Assistant](https://www.home-assistant.io/) integration for the **Or
 - **Schedule sensors and sliders** — Today's bedtime, wake-up time, duration, and target temperatures, plus Number sliders for adjusting the four schedule-phase temperature offsets (-10 … +10, app-style).
 - **Session tracking** — Binary sensor showing whether a sleep session is currently in progress.
 - **Diagnostic entity** — Live-connection state sensor (`connecting` / `connected` / `reconnecting` / `device_offline` / `auth_failed`), with the seconds-since-last-frame exposed as an attribute.
-- **Passwordless auth with automatic refresh** — Sign in with the same email or phone + verification code flow as the Orion app. Tokens are refreshed automatically; you are prompted to re-authenticate only if the refresh token itself is revoked.
+- **Passwordless auth with automatic refresh** — Sign in with email or phone + verification code (same flow as the Orion app), **or paste a long-lived API key** from [app.orionsleep.com/api-keys](https://app.orionsleep.com/api-keys) for headless setups. OTP tokens refresh automatically; API keys have no refresh — generate a new key if one is revoked.
 - **Redacted diagnostics** — `Download diagnostics` produces a debug bundle with tokens, identifiers, and network PII stripped.
 
 ## Installation
@@ -51,9 +51,9 @@ Or go to **Settings > Devices & Services > Add Integration** and search for "Ori
 
 ### Setup steps
 
-1. Choose whether to sign in with **email** or **phone**.
-2. Enter your Orion Sleep account email or phone number. A verification code is sent the same way as it is for the Orion app.
-3. Enter the verification code to complete setup.
+1. Choose whether to sign in with **email**, **phone**, or **API key**.
+2. **Email / phone:** enter your Orion Sleep account address. A verification code is sent the same way as in the Orion app, then enter the code to finish.
+3. **API key:** paste a key generated at [app.orionsleep.com/api-keys](https://app.orionsleep.com/api-keys). No verification code is needed. If re-authenticating, create a fresh key first — revoked keys fail validation.
 
 ### Options
 

@@ -15,12 +15,20 @@ WS_STALE_AFTER_SECONDS = 30.0
 WS_RECONNECT_MIN_DELAY = 1.0
 WS_RECONNECT_MAX_DELAY = 60.0
 
+# Auth methods (value stored in CONF_AUTH_METHOD)
+AUTH_METHOD_EMAIL = "email"
+AUTH_METHOD_PHONE = "phone"
+AUTH_METHOD_API_KEY = "api_key"
+
 # Config entry data keys (stored in config_entry.data)
-CONF_AUTH_METHOD = "auth_method"  # "email" or "phone"
-CONF_AUTH_VALUE = "auth_value"  # the email address or phone number
+CONF_AUTH_METHOD = "auth_method"  # "email", "phone", or "api_key"
+CONF_AUTH_VALUE = "auth_value"  # email/phone (OTP) or account email (API key)
 CONF_ACCESS_TOKEN = "access_token"
 CONF_REFRESH_TOKEN = "refresh_token"
 CONF_EXPIRES_AT = "expires_at"  # Unix timestamp
+# Long-lived API key (Orion web portal). Stored when CONF_AUTH_METHOD ==
+# AUTH_METHOD_API_KEY; used as a drop-in bearer credential (no OTP/refresh).
+CONF_API_KEY = "api_key"
 
 # Options flow keys
 CONF_SCAN_INTERVAL = "scan_interval"  # polling interval in seconds
@@ -41,6 +49,7 @@ CONF_PARTNER_AUTH_VALUE = "partner_auth_value"
 CONF_PARTNER_ACCESS_TOKEN = "partner_access_token"
 CONF_PARTNER_REFRESH_TOKEN = "partner_refresh_token"
 CONF_PARTNER_EXPIRES_AT = "partner_expires_at"
+CONF_PARTNER_API_KEY = "partner_api_key"  # long-lived partner API key
 CONF_PARTNER_CONFIGURED = "partner_configured"  # bool in options; triggers reload
 
 # The Orion app displays temperature as a relative offset (-10 to +10).

@@ -12,8 +12,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import OrionApiClient
 from .const import (
     CONF_ACCESS_TOKEN,
+    CONF_API_KEY,
     CONF_EXPIRES_AT,
     CONF_PARTNER_ACCESS_TOKEN,
+    CONF_PARTNER_API_KEY,
     CONF_PARTNER_EXPIRES_AT,
     CONF_PARTNER_REFRESH_TOKEN,
     CONF_REFRESH_TOKEN,
@@ -35,31 +37,48 @@ PLATFORMS: list[Platform] = [
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Orion Sleep from a config entry."""
     session = async_get_clientsession(hass)
-    api_client = OrionApiClient(
-        session=session,
-        access_token=entry.data[CONF_ACCESS_TOKEN],
-        refresh_token=entry.data[CONF_REFRESH_TOKEN],
-        expires_at=entry.data[CONF_EXPIRES_AT],
-    )
 
-    # Register token refresh callback to persist new tokens
-    def on_token_refresh(
-        access_token: str, refresh_token: str, expires_at: float
-    ) -> None:
-        hass.config_entries.async_update_entry(
-            entry,
-            data={
-                **entry.data,
-                CONF_ACCESS_TOKEN: access_token,
-                CONF_REFRESH_TOKEN: refresh_token,
-                CONF_EXPIRES_AT: expires_at,
-            },
+    # API-key auth: the key is a long-lived bearer credential (no OTP/refresh).
+    # It is passed as ``access_token`` with ``is_api_key=True`` so _headers()
+    # and the WebSocket (which read ``_access_token``) work unchanged.
+    if CONF_API_KEY in entry.data:
+        api_client = OrionApiClient(
+            session=session,
+            access_token=entry.data[CONF_API_KEY],
+            is_api_key=True,
+        )
+    else:
+        api_client = OrionApiClient(
+            session=session,
+            access_token=entry.data[CONF_ACCESS_TOKEN],
+            refresh_token=entry.data[CONF_REFRESH_TOKEN],
+            expires_at=entry.data[CONF_EXPIRES_AT],
         )
 
-    api_client.set_token_refresh_callback(on_token_refresh)
+        # Register token refresh callback to persist new tokens
+        def on_token_refresh(
+            access_token: str, refresh_token: str, expires_at: float
+        ) -> None:
+            hass.config_entries.async_update_entry(
+                entry,
+                data={
+                    **entry.data,
+                    CONF_ACCESS_TOKEN: access_token,
+                    CONF_REFRESH_TOKEN: refresh_token,
+                    CONF_EXPIRES_AT: expires_at,
+                },
+            )
+
+        api_client.set_token_refresh_callback(on_token_refresh)
 
     partner_client: OrionApiClient | None = None
-    if CONF_PARTNER_ACCESS_TOKEN in entry.data:
+    if CONF_PARTNER_API_KEY in entry.data:
+        partner_client = OrionApiClient(
+            session=session,
+            access_token=entry.data[CONF_PARTNER_API_KEY],
+            is_api_key=True,
+        )
+    elif CONF_PARTNER_ACCESS_TOKEN in entry.data:
         partner_client = OrionApiClient(
             session=session,
             access_token=entry.data[CONF_PARTNER_ACCESS_TOKEN],

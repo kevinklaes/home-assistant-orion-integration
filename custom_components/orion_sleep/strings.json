@@ -22,6 +22,13 @@
           "phone": "Phone number"
         }
       },
+      "api_key": {
+        "title": "Orion Sleep API Key",
+        "description": "Paste an API key generated at https://app.orionsleep.com/api-keys. No verification code is needed. If you are re-authenticating, generate a fresh key first — a revoked key will fail.",
+        "data": {
+          "api_key": "API key"
+        }
+      },
       "verify": {
         "title": "Enter Verification Code",
         "description": "A verification code has been sent. Please enter it below.",
@@ -37,6 +44,7 @@
     "error": {
       "cannot_connect": "Failed to connect to Orion Sleep API",
       "invalid_code": "Invalid verification code",
+      "invalid_api_key": "Invalid or revoked API key",
       "invalid_auth": "Authentication failed",
       "invalid_phone": "Phone number must include the leading 1 country code and be 11 digits total (e.g. 15551234567).",
       "unknown": "An unexpected error occurred"
@@ -80,6 +88,13 @@
         "description": "Enter the partner's Orion Sleep phone number. Must be 11 digits, ex: 15552221234.",
         "data": {
           "phone": "Phone number"
+        }
+      },
+      "partner_api_key": {
+        "title": "Partner API Key",
+        "description": "Paste the partner's API key generated at https://app.orionsleep.com/api-keys. No verification code is needed.",
+        "data": {
+          "api_key": "API key"
         }
       },
       "partner_verify": {

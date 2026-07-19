@@ -14,6 +14,8 @@ from .coordinator import OrionDataUpdateCoordinator
 TO_REDACT = {
     "access_token",
     "refresh_token",
+    "api_key",
+    "partner_api_key",
     "email",
     "phone",
     "auth_value",
