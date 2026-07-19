@@ -467,6 +467,39 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         today = schedules.get("today_sleep_schedule", {})
         return today.get(self.partner_user_id)
 
+    def get_recommendations(self) -> list | None:
+        """Get Orion Intelligence temperature recommendations for the current user.
+
+        Reads ``response.recommendations.{user_id}`` from the same
+        ``/v1/sleep-schedules`` payload already polled for schedules — this
+        map was added to the live response around the 2026-07 "Orion
+        Intelligence" rollout (see AGENTS.md). Returns ``None`` (unavailable)
+        when the ``recommendations`` key is absent from the response
+        entirely (e.g. account/subscription doesn't support the feature),
+        and ``[]`` when the key is present but empty (subscribed, no
+        recommendation pending right now) — both observed as valid API
+        states, distinguished so entities can tell "unsupported" apart from
+        "supported, nothing to show".
+        """
+        schedules = (self.data or {}).get("schedules", {})
+        if "recommendations" not in schedules:
+            return None
+        return schedules.get("recommendations", {}).get(self.user_id) or []
+
+    def get_partner_recommendations(self) -> list | None:
+        """Get Orion Intelligence temperature recommendations for the partner.
+
+        Same semantics as :meth:`get_recommendations`, read from the
+        partner account's own ``/v1/sleep-schedules`` response. Returns
+        ``None`` when no partner is configured.
+        """
+        if not self.has_partner:
+            return None
+        schedules = (self.data or {}).get("partner_schedules", {})
+        if "recommendations" not in schedules:
+            return None
+        return schedules.get("recommendations", {}).get(self.partner_user_id) or []
+
     def get_all_schedules(self) -> list[dict]:
         """Get all schedule entries for the current user."""
         schedules = (self.data or {}).get("schedules", {})

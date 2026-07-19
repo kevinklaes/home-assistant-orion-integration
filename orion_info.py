@@ -11,6 +11,8 @@ reuses the cached access token (or refreshes it automatically) so you don't
 have to log in again.  Pass --relogin to force a fresh login.
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json
@@ -974,6 +976,15 @@ def main() -> None:
         "user-away) while logging WebSocket messages, to enumerate the event "
         "taxonomy. Restores the original zone state at the end.",
     )
+    parser.add_argument(
+        "--recommendations",
+        action="store_true",
+        help="Isolate and print just the Orion Intelligence temperature "
+        "recommendations map (response.recommendations.{user_id}) from the "
+        "sleep-schedules response, instead of scrolling through the full "
+        "schedule dump. Useful for checking whether the account currently "
+        "has any pending AI temperature recommendations.",
+    )
     args = parser.parse_args()
 
     # Obtain a valid access token (cached / refreshed / fresh login)
@@ -1019,6 +1030,20 @@ def main() -> None:
     schedules = get_sleep_schedules(access_token)
     if schedules is not None:
         _pretty("Sleep Schedules", schedules)
+
+    if args.recommendations:
+        schedules_data = (schedules or {}).get("response") or {}
+        recommendations = schedules_data.get("recommendations")
+        if recommendations is None:
+            print(
+                "\n[recommendations] key not present in sleep-schedules "
+                "response — feature may be unsupported for this account."
+            )
+        else:
+            _pretty("Orion Intelligence Temperature Recommendations", recommendations)
+            for user_id, recs in recommendations.items():
+                count = len(recs) if isinstance(recs, list) else "?"
+                print(f"  user {user_id}: {count} pending recommendation(s)")
 
     insights = get_insights(access_token, days=args.insights_days)
     if insights is not None:

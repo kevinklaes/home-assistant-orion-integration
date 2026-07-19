@@ -357,6 +357,7 @@ async def async_setup_entry(
         entities.append(OrionBreathingDisturbancesSensor(coordinator, device_id))
         entities.append(OrionConsistencySensor(coordinator, device_id))
         entities.append(OrionSleepDebtSensor(coordinator, device_id))
+        entities.append(OrionTemperatureRecommendationSensor(coordinator, device_id))
         for granularity in ("week", "month"):
             entities.append(
                 OrionTrendScoreSensor(coordinator, device_id, granularity)
@@ -392,6 +393,11 @@ async def async_setup_entry(
             )
             entities.append(
                 OrionSleepDebtSensor(coordinator, device_id, is_partner=True)
+            )
+            entities.append(
+                OrionTemperatureRecommendationSensor(
+                    coordinator, device_id, is_partner=True
+                )
             )
             for granularity in ("week", "month"):
                 entities.append(
@@ -756,6 +762,65 @@ class OrionSleepDebtSensor(OrionBaseEntity, SensorEntity):
             if value is not None:
                 attrs[key] = value
         return {k: v for k, v in attrs.items() if v is not None} or None
+
+
+class OrionTemperatureRecommendationSensor(OrionBaseEntity, SensorEntity):
+    """Orion Intelligence temperature recommendations, from ``/v1/sleep-schedules``.
+
+    Reads ``response.recommendations.{user_id}`` — a list added to the
+    live sleep-schedules response alongside the 2026-07 "Orion Intelligence"
+    rollout (advanced temperature recommendations, previously A/B tested).
+    See ``coordinator.get_recommendations`` / ``get_partner_recommendations``.
+
+    **Item schema not yet observed.** On the account this was probed with
+    (Orion Intelligence subscription active, ~2.5 months of sleep history),
+    the array was consistently empty for every user on the device, so no
+    non-empty sample has been captured — the feature may only populate
+    entries intermittently, or this account/cohort hasn't been served one
+    yet. State reflects the number of currently pending recommendations
+    (0 is a normal, expected value, not an error) and the raw item list is
+    exposed as an attribute so this entity is immediately useful — without
+    guessing at field names — once Orion populates a real recommendation.
+    """
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:thermometer-lines"
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+        is_partner: bool = False,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._is_partner = is_partner
+        if is_partner:
+            self._attr_translation_key = "partner_temperature_recommendations"
+            self._attr_unique_id = f"{device_id}_partner_temperature_recommendations"
+        else:
+            self._attr_translation_key = "temperature_recommendations"
+            self._attr_unique_id = f"{device_id}_temperature_recommendations"
+
+    def _recommendations(self) -> list | None:
+        if self._is_partner:
+            return self.coordinator.get_partner_recommendations()
+        return self.coordinator.get_recommendations()
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the count of pending recommendations, or None if unsupported."""
+        recommendations = self._recommendations()
+        if recommendations is None:
+            return None
+        return len(recommendations)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return the raw recommendation list, unmodified, when non-empty."""
+        recommendations = self._recommendations()
+        if not recommendations:
+            return None
+        return {"recommendations": recommendations}
 
 
 # Distinct icon per granularity so the two trend sensors are visually

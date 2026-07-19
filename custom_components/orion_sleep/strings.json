@@ -297,6 +297,12 @@
       "partner_sleep_debt": {
         "name": "Partner Sleep Debt"
       },
+      "temperature_recommendations": {
+        "name": "Temperature Recommendations"
+      },
+      "partner_temperature_recommendations": {
+        "name": "Partner Temperature Recommendations"
+      },
       "websocket_state": {
         "name": "Live Connection",
         "state": {

@@ -796,7 +796,21 @@ paths:
     get:
       operationId: getSleepSchedules
       summary: Get sleep schedules
-      description: Retrieves the user's sleep schedules with optional action filter.
+      description: |
+        Retrieves the user's sleep schedules with optional action filter.
+
+        NOTE: the live (snake_case) response diverges from the `SleepSchedule`
+        schema below, which reflects the bytecode-derived spec — see
+        AGENTS.md "Real API Response Shapes" for the live-verified shape
+        (`response.schedules.{user_id}[]`, `response.today_sleep_schedule.
+        {user_id}`). The response additionally carries
+        `response.recommendations.{user_id}[]` — **Orion Intelligence
+        temperature recommendations** (live-verified 2026-07-19), a dict
+        keyed by every user sharing the device. Observed empty (`[]`) for
+        every user on the one account probed so far despite an active
+        subscription and 2.5 months of sleep data, so the array's item
+        schema is unconfirmed. See AGENTS.md for details and
+        `orion_info.py --recommendations` to re-check.
       tags: [Sleep Schedules]
       parameters:
         - name: action
