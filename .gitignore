@@ -1,8 +1,13 @@
 # Gas Town polecat worktree scaffolding (injected per-session, not project files)
 /.beads/
 /.claude/
+/.cursor/
 /.runtime/
 /CLAUDE.md
+/.local_version
+/last-touched
+# Embedded Dolt data plane — runtime state, never commit (corrupts on external writes)
+/embeddeddolt/
 
 # Python
 __pycache__/
