@@ -248,6 +248,52 @@ INSIGHT_SENSOR_DESCRIPTIONS: tuple[OrionSensorEntityDescription, ...] = (
     ),
 )
 
+# Numeric sleep-stage companions for Influx/Grafana — same session source as
+# the string duration sensors above, but raw minutes (no _minutes_to_hm).
+# Do NOT set device_class=DURATION (same naming issue as string sensors).
+SLEEP_STAGE_MINUTES_SENSOR_DESCRIPTIONS: tuple[OrionSensorEntityDescription, ...] = (
+    OrionSensorEntityDescription(
+        key="total_sleep_minutes",
+        translation_key="total_sleep_minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:sleep",
+        value_fn=lambda session: _get_sleep_summary(session).get("time_asleep"),
+    ),
+    OrionSensorEntityDescription(
+        key="deep_sleep_minutes",
+        translation_key="deep_sleep_minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:power-sleep",
+        value_fn=lambda session: _get_sleep_summary(session).get("deep_sleep"),
+    ),
+    OrionSensorEntityDescription(
+        key="rem_sleep_minutes",
+        translation_key="rem_sleep_minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:eye-refresh-outline",
+        value_fn=lambda session: _get_sleep_summary(session).get("rem_sleep"),
+    ),
+    OrionSensorEntityDescription(
+        key="light_sleep_minutes",
+        translation_key="light_sleep_minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:weather-night",
+        value_fn=lambda session: _get_sleep_summary(session).get("light_sleep"),
+    ),
+    OrionSensorEntityDescription(
+        key="awake_time_minutes",
+        translation_key="awake_time_minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:eye-outline",
+        value_fn=lambda session: _get_sleep_summary(session).get("awake_time"),
+    ),
+)
+
 # Schedule sensors — derived from today_sleep_schedule, not sessions
 
 SCHEDULE_SENSOR_DESCRIPTIONS: tuple[OrionSensorEntityDescription, ...] = (
@@ -349,6 +395,8 @@ async def async_setup_entry(
             continue
         for description in INSIGHT_SENSOR_DESCRIPTIONS:
             entities.append(OrionSensorEntity(coordinator, device_id, description))
+        for description in SLEEP_STAGE_MINUTES_SENSOR_DESCRIPTIONS:
+            entities.append(OrionSensorEntity(coordinator, device_id, description))
         for description in SCHEDULE_SENSOR_DESCRIPTIONS:
             entities.append(
                 OrionScheduleSensorEntity(coordinator, device_id, description)
@@ -367,6 +415,12 @@ async def async_setup_entry(
         # Only created when a partner account is linked.
         if coordinator.has_partner:
             for description in INSIGHT_SENSOR_DESCRIPTIONS:
+                entities.append(
+                    OrionSensorEntity(
+                        coordinator, device_id, description, is_partner=True
+                    )
+                )
+            for description in SLEEP_STAGE_MINUTES_SENSOR_DESCRIPTIONS:
                 entities.append(
                     OrionSensorEntity(
                         coordinator, device_id, description, is_partner=True

@@ -213,6 +213,21 @@
       "awake_time": {
         "name": "Awake Time"
       },
+      "total_sleep_minutes": {
+        "name": "Total Sleep (minutes)"
+      },
+      "deep_sleep_minutes": {
+        "name": "Deep Sleep (minutes)"
+      },
+      "rem_sleep_minutes": {
+        "name": "REM Sleep (minutes)"
+      },
+      "light_sleep_minutes": {
+        "name": "Light Sleep (minutes)"
+      },
+      "awake_time_minutes": {
+        "name": "Awake Time (minutes)"
+      },
       "heart_rate_avg": {
         "name": "Heart Rate"
       },
@@ -248,6 +263,21 @@
       },
       "partner_awake_time": {
         "name": "Partner Awake Time"
+      },
+      "partner_total_sleep_minutes": {
+        "name": "Partner Total Sleep (minutes)"
+      },
+      "partner_deep_sleep_minutes": {
+        "name": "Partner Deep Sleep (minutes)"
+      },
+      "partner_rem_sleep_minutes": {
+        "name": "Partner REM Sleep (minutes)"
+      },
+      "partner_light_sleep_minutes": {
+        "name": "Partner Light Sleep (minutes)"
+      },
+      "partner_awake_time_minutes": {
+        "name": "Partner Awake Time (minutes)"
       },
       "partner_heart_rate_avg": {
         "name": "Partner Heart Rate"
