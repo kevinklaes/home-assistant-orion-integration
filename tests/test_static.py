@@ -38,11 +38,6 @@ NEW_KEYS = {
     ),
 }
 
-TRANSLATIONS_PENDING = pytest.mark.xfail(
-    reason="translations land in slice 2", strict=False
-)
-
-
 def test_new_key_count():
     assert sum(len(keys) for keys in NEW_KEYS.values()) == 18
 
@@ -51,7 +46,6 @@ def test_strings_and_en_identical():
     assert STRINGS.read_bytes() == EN.read_bytes()
 
 
-@TRANSLATIONS_PENDING
 @pytest.mark.parametrize("path", [STRINGS, EN], ids=["strings", "en"])
 def test_new_translation_keys_present(path):
     entity = json.loads(path.read_text(encoding="utf-8"))["entity"]

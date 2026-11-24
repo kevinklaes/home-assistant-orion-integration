@@ -11,6 +11,9 @@ from homeassistant.core import HomeAssistant
 
 from .coordinator import OrionDataUpdateCoordinator
 
+# `name`, `ip` and `mac` must stay in TO_REDACT: they carry the Wi-Fi network
+# name, IP address and MAC address from the live payload's status.network
+# block. tests/test_static.py checks this set literal.
 TO_REDACT = {
     "access_token",
     "refresh_token",

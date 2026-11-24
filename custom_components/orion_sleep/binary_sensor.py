@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 import logging
+from typing import Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
+    BinarySensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
@@ -15,6 +19,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import OrionDataUpdateCoordinator
 from .entity import OrionBaseEntity
+from .hub_health import (
+    HubHealth,
+    device_problem_attributes,
+    device_problem_is_on,
+    pad_sensor_problem_attributes,
+    update_in_progress_attributes,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,6 +64,17 @@ async def async_setup_entry(
             )
 
         entities.append(OrionProblemBinarySensor(coordinator, device_id))
+
+        # Hub health: once per device (it belongs to the hub, not a user),
+        # so never duplicated for a partner account.
+        for description in HUB_HEALTH_BINARY_SENSORS:
+            entities.append(
+                OrionHubHealthBinarySensor(coordinator, device_id, description)
+            )
+        for sensor_name in _TOPPER_SENSORS:
+            entities.append(
+                OrionPadSensorProblemBinarySensor(coordinator, device_id, sensor_name)
+            )
 
     async_add_entities(entities)
 
@@ -163,24 +185,116 @@ class OrionProblemBinarySensor(OrionBaseEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
-        live = self.coordinator.live_devices.get(self._device_id)
-        if not live:
-            return None
-        safety = (live.get("status") or {}).get("safety")
-        if not isinstance(safety, dict):
-            return False
-        if safety.get("error"):
-            return True
-        codes = safety.get("error_codes")
-        return bool(codes) if isinstance(codes, list) else False
+        return device_problem_is_on(
+            self.coordinator.live_devices.get(self._device_id)
+        )
 
     @property
     def extra_state_attributes(self) -> dict | None:
-        live = self.coordinator.live_devices.get(self._device_id)
-        if not live:
+        # error_codes (unchanged) plus Orion's own error_descriptions.
+        return device_problem_attributes(
+            self.coordinator.live_devices.get(self._device_id)
+        )
+
+
+# ── Hub health (diagnostic) ───────────────────────────────────────────────
+#
+# Values come from coordinator.hub_health(), which parses the live payload
+# in hub_health.py. These classes hold no parsing logic and do not override
+# ``available``: a missing value shows as unknown.
+
+
+@dataclass(frozen=True, kw_only=True)
+class OrionHubBinarySensorDescription(BinarySensorEntityDescription):
+    """Describe a hub-health binary sensor read from a ``HubHealth`` snapshot."""
+
+    value_fn: Callable[[HubHealth], bool | None]
+    attrs_fn: Callable[[HubHealth], dict[str, Any] | None] | None = None
+
+
+HUB_HEALTH_BINARY_SENSORS: tuple[OrionHubBinarySensorDescription, ...] = (
+    OrionHubBinarySensorDescription(
+        key="hub_online",
+        translation_key="hub_online",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        value_fn=lambda health: health.online,
+    ),
+    OrionHubBinarySensorDescription(
+        key="firmware_update_available",
+        translation_key="firmware_update_available",
+        device_class=BinarySensorDeviceClass.UPDATE,
+        value_fn=lambda health: health.update_available,
+    ),
+    OrionHubBinarySensorDescription(
+        key="firmware_update_in_progress",
+        translation_key="firmware_update_in_progress",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        value_fn=lambda health: health.update_in_progress,
+        attrs_fn=update_in_progress_attributes,
+    ),
+    OrionHubBinarySensorDescription(
+        key="water_fill_mode",
+        translation_key="water_fill_mode",
+        icon="mdi:water-plus",
+        value_fn=lambda health: health.water_fill_mode,
+    ),
+)
+
+
+class OrionHubHealthBinarySensor(OrionBaseEntity, BinarySensorEntity):
+    """Diagnostic hub-health binary sensor driven by a description."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    entity_description: OrionHubBinarySensorDescription
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+        description: OrionHubBinarySensorDescription,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self.entity_description = description
+        self._attr_unique_id = f"{device_id}_{description.key}"
+
+    @property
+    def is_on(self) -> bool | None:
+        return self.entity_description.value_fn(
+            self.coordinator.hub_health(self._device_id)
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        if self.entity_description.attrs_fn is None:
             return None
-        safety = (live.get("status") or {}).get("safety")
-        if not isinstance(safety, dict):
-            return None
-        codes = safety.get("error_codes")
-        return {"error_codes": codes} if codes else None
+        return self.entity_description.attrs_fn(
+            self.coordinator.hub_health(self._device_id)
+        )
+
+
+class OrionPadSensorProblemBinarySensor(OrionBaseEntity, BinarySensorEntity):
+    """On when a topper sensor pad reports ``is_working: false``."""
+
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+        sensor_name: str,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._sensor_name = sensor_name
+        self._attr_translation_key = f"{sensor_name}_problem"
+        self._attr_unique_id = f"{device_id}_{sensor_name}_problem"
+
+    @property
+    def is_on(self) -> bool | None:
+        health = self.coordinator.hub_health(self._device_id)
+        return health.pad_sensor(self._sensor_name).problem
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        health = self.coordinator.hub_health(self._device_id)
+        return pad_sensor_problem_attributes(health.pad_sensor(self._sensor_name))
