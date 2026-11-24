@@ -495,10 +495,15 @@ def probe_power(token: str, device: dict, on: bool) -> None:
 #   payload.status.firmware       {"cb": "2.6.0", "ib": "2.5.0"}
 #   payload.status.firmware_update {workflow_id, started_at, updated_at,
 #                                   in_progress, current_step, completed_at,
-#                                   result}  (unix ms timestamps)
+#                                   result}  (*_at are unix timestamps; ms vs.
+#                                   seconds is unconfirmed)
 #   payload.status.pending_update {"is_available": bool}
 #   payload.status.network        {last_seen, name, ip, rssi, uptime, mac}
+#                                 (uptime: seconds since boot, inferred from
+#                                  one sample, unconfirmed)
 #   payload.status.safety         {error, error_codes[], error_descriptions[]}
+#                                 (error_codes has only been seen empty; its
+#                                  item type, assumed string, is unconfirmed)
 #   payload.status.zones[]        measured (distinct from setpoints):
 #                                   {"id": "...", "temp": 21.9, "thermal_state": "standby"}
 #   payload.status.sensors.sensor1, sensor2
@@ -512,6 +517,18 @@ def probe_power(token: str, device: dict, on: bool) -> None:
 #                                   {id, user_id, label (bedtime|phase_1|
 #                                    phase_2|wake_up|turn_off), scheduled_time,
 #                                    action: {zones: [...]}, created_at}
+#
+# Hub-health fields the Home Assistant integration reads (1.1.0+), from the
+# WebSocket payload or the GET /live fallback alike: led_brightness,
+# water_fill, is_in_water_fill_mode, status.online, status.firmware.{cb,ib},
+# status.pending_update.is_available, status.firmware_update.*  (except
+# workflow_id), status.network.{rssi,uptime,last_seen},
+# status.safety.*, and status.sensors.sensorN.{is_working,firmware_version,
+# hardware_version}.  status.network.{name,ip,mac} are never read.
+#
+# Not live-verified: a third-party client reads a top-level firmware.version
+# and a top-level quiet_mode from the GET /live body.  Neither appears in a
+# capture from this repo, so both are left out of the payload summary above.
 #
 # Notable:
 #   - set_user_away does NOT emit a distinct event type; it results in another

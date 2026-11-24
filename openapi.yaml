@@ -2708,6 +2708,18 @@ components:
         Full state of a single device. Shared between `live_device.snapshot`
         and `live_device.update`. Mirrors the body returned by
         `GET /v1/devices/{serial_number}/live`.
+
+        Hub-health fields read by the Home Assistant integration (1.1.0+):
+        `led_brightness`, `water_fill`, `is_in_water_fill_mode`, and the
+        `status` fields listed on `WsDeviceStatus`. They are read the same
+        way whether the payload arrived over the WebSocket or from
+        `GET /live`; any block may be missing on the REST path.
+
+        Not live-verified, not in this schema: a third-party client reads a
+        top-level `firmware.version` and a top-level `quiet_mode` from the
+        `GET /live` body. Neither has been seen in a capture from this
+        repository (the captured payload carries `status.firmware.cb` and
+        `.ib` instead), so neither is modelled here.
       required: [serial_number, zones, status]
       properties:
         serial_number:
@@ -2772,6 +2784,15 @@ components:
       description: |
         Measured/runtime state of the device. Distinct from the per-zone
         setpoints above.
+
+        Hub-health fields read by the Home Assistant integration (1.1.0+):
+        `online`, `firmware.cb`, `firmware.ib`, `pending_update.is_available`,
+        `firmware_update.in_progress` / `.current_step` / `.result` /
+        `.started_at` / `.updated_at` / `.completed_at`, `network.rssi`,
+        `network.uptime` (to derive a last-restart time), `network.last_seen`,
+        `safety.error` / `.error_codes` / `.error_descriptions`, and
+        `sensors.sensorN.is_working` / `.firmware_version` /
+        `.hardware_version`. `network.name`, `.ip` and `.mac` are never read.
       properties:
         online:
           type: boolean
@@ -2799,10 +2820,14 @@ components:
             started_at:
               type: integer
               format: int64
-              description: Unix ms
+              description: |
+                Unix timestamp. The unit (ms vs. seconds) is unconfirmed;
+                the integration passes the raw number through as an
+                attribute without converting it.
             updated_at:
               type: integer
               format: int64
+              description: Unix timestamp; unit unconfirmed (see `started_at`).
             in_progress:
               type: boolean
             current_step:
@@ -2813,6 +2838,7 @@ components:
             completed_at:
               type: integer
               format: int64
+              description: Unix timestamp; unit unconfirmed (see `started_at`).
             result:
               type: string
               description: Observed value `success`.
@@ -2839,7 +2865,10 @@ components:
               description: dBm
             uptime:
               type: integer
-              description: Seconds since boot
+              description: |
+                Seconds since boot. Unit and meaning are inferred from a
+                single sample (266238), not confirmed. The integration treats
+                it as seconds to derive a last-restart time.
             mac:
               type: string
         safety:
@@ -2849,6 +2878,11 @@ components:
               type: boolean
             error_codes:
               type: array
+              description: |
+                The `string` item type is inferred from an empty array and is
+                unconfirmed; the array has never been captured non-empty.
+                Whether the codes use the hub firmware's own fault
+                identifiers is unknown.
               items:
                 type: string
             error_descriptions:
