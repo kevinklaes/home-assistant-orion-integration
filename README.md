@@ -178,6 +178,20 @@ The raw `status_text`, `is_working`, `firmware_version`, and `hardware_version` 
 | Live Connection | WebSocket state: `stopped` / `connecting` / `connected` / `reconnecting` / `device_offline` / `auth_failed`, with `seconds_since_last_message` as an attribute. |
 | Sensor 1 Status | Raw `status_text` from topper sensor 1 (observed values: `left_bed`, `normal`). |
 | Sensor 2 Status | Raw `status_text` from topper sensor 2. |
+| Wi-Fi Signal | Hub Wi-Fi signal strength in dBm (`status.network.rssi`). |
+| Last Restart | Timestamp of the hub's last restart, worked out from `status.network.uptime` (treated as seconds since boot). Kept steady while uptime ticks normally; moves when uptime goes backwards or the derived time shifts by more than 120 s. Starts as unknown after a Home Assistant restart until the hub reports in while online. |
+| Last Seen | Timestamp of the hub's last contact with the cloud (`status.network.last_seen`). **Disabled by default** because it changes every couple of seconds. |
+| Hub Firmware | Control-board firmware version (`status.firmware.cb`), as reported. |
+| Panel Firmware | Panel (interface) board firmware version (`status.firmware.ib`), as reported. |
+| Firmware Update Step | Raw `status.firmware_update.current_step` (only `complete` observed so far), with `result`, `in_progress`, `started_at`, `updated_at` and `completed_at` attributes. The timestamps are passed through unconverted because their unit is not confirmed. |
+| Problem | Plain-text summary of `status.safety`: `OK` when no error is reported; otherwise Orion's own error descriptions, or the raw codes, or `Problem reported (no details)`. `codes` and `descriptions` attributes. Unknown when the payload has no safety block. |
+| Error Codes | Raw `status.safety.error_codes`, comma-separated, exactly as reported (`none` when the list is empty), with `codes` and `descriptions` attributes. Codes are not translated into names: what they mean in the cloud API is not yet known. |
+| Water Fill | Raw `water_fill` value (only `unknown` observed so far). |
+| LED Brightness | Front-panel LED brightness in % (`led_brightness`). Read-only. |
+| Sensor 1 Firmware | `status.sensors.sensor1.firmware_version`, with `hardware_version` as an attribute. |
+| Sensor 2 Firmware | Same for topper sensor 2. |
+
+All of these are diagnostic entities read from the live device payload (WebSocket, or the `GET /live` fallback each poll when the WebSocket is down). A missing or malformed field shows as `unknown`, never as a made-up default. The hub's Wi-Fi network name, IP address and MAC address are never exposed in any entity or attribute.
 
 ### Binary sensors
 
@@ -186,6 +200,13 @@ The raw `status_text`, `is_working`, `firmware_version`, and `hardware_version` 
 | Sleep Session | — | `insights.session.is_in_progress`. Rendered as "Asleep" / "Not asleep". |
 | Sensor 1 On Bed | Occupancy | `sensor1.status_text != "left_bed"`. Driven by the topper's own classification, which can take ~30 s to 1 minute to react to someone sitting down or leaving. |
 | Sensor 2 On Bed | Occupancy | `sensor2.status_text != "left_bed"`. Same latency caveat as sensor 1. |
+| Problem | Problem | Diagnostic. On when `status.safety.error` is set or `error_codes` is non-empty. `error_codes` attribute when present, `error_descriptions` attribute when non-empty. |
+| Hub Online | Connectivity | Diagnostic. `status.online`: whether the cloud can currently reach the hub. |
+| Firmware Update Available | Update | Diagnostic, read-only. `status.pending_update.is_available`. The API gives only this flag, with no version to compare against, so it is a binary sensor rather than an `update` entity, and the integration does not start updates. |
+| Firmware Update In Progress | Running | Diagnostic. `status.firmware_update.in_progress`, with `current_step` and `result` attributes. |
+| Water Fill Mode | — | Diagnostic. `is_in_water_fill_mode`. |
+| Sensor 1 Problem | Problem | Diagnostic. On when topper sensor 1 reports `is_working: false`, off when `true`. `firmware_version` and `hardware_version` attributes. |
+| Sensor 2 Problem | Problem | Same for topper sensor 2. |
 
 ## Troubleshooting
 
