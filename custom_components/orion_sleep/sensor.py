@@ -27,6 +27,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import CONF_ZONE_LEFT, DEFAULT_ZONE_LEFT
 from .coordinator import OrionDataUpdateCoordinator
 from .entity import OrionBaseEntity
+from .faults import problem_state, with_fault_names
 from .hub_health import (
     HubHealth,
     error_codes_attributes,
@@ -1366,15 +1367,19 @@ HUB_HEALTH_SENSORS: tuple[OrionHubSensorDescription, ...] = (
         key="problem_description",
         translation_key="problem_description",
         icon="mdi:alert-circle-outline",
-        value_fn=lambda health: health.problem_text,
-        attrs_fn=problem_attributes,
+        value_fn=lambda health: problem_state(health.problem_text, health.error_codes),
+        attrs_fn=lambda health: with_fault_names(
+            problem_attributes(health), health.error_codes
+        ),
     ),
     OrionHubSensorDescription(
         key="error_codes",
         translation_key="error_codes",
         icon="mdi:alert-octagon-outline",
         value_fn=lambda health: health.error_codes_text,
-        attrs_fn=error_codes_attributes,
+        attrs_fn=lambda health: with_fault_names(
+            error_codes_attributes(health), health.error_codes
+        ),
     ),
     OrionHubSensorDescription(
         key="water_fill",
