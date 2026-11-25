@@ -1,5 +1,4 @@
 # Gas Town polecat worktree scaffolding (injected per-session, not project files)
-/.beads/
 /.claude/
 /.cursor/
 /.runtime/
@@ -19,3 +18,15 @@ __pycache__/
 # gascity beads (local runtime state)
 .beads/*
 !.beads/identity.toml
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*
+
+# Gas City (labdev)
+.gc/
+plans/
+worktrees/
