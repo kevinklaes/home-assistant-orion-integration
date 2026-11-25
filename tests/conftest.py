@@ -1,8 +1,9 @@
-"""Shared fixtures for the hub-health unit tests.
+"""Shared fixtures for the hub-health and fault-name unit tests.
 
 ``custom_components.orion_sleep`` cannot be imported outside Home Assistant
-(its ``__init__`` imports ``homeassistant``), so ``hub_health.py`` is loaded
-by file path. It has no Home Assistant imports and no relative imports.
+(its ``__init__`` imports ``homeassistant``), so ``hub_health.py`` and
+``faults.py`` are loaded by file path. Neither has Home Assistant imports or
+relative imports.
 """
 
 from __future__ import annotations
@@ -17,8 +18,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 COMPONENT_DIR = REPO_ROOT / "custom_components" / "orion_sleep"
 HUB_HEALTH_PATH = COMPONENT_DIR / "hub_health.py"
+FAULTS_PATH = COMPONENT_DIR / "faults.py"
 
 MODULE_NAME = "orion_hub_health"
+FAULTS_MODULE_NAME = "orion_faults"
 
 # Made-up identifiers. None of these belong to a real device or network.
 FAKE_SERIAL = "TESTSERIAL01"
@@ -27,21 +30,35 @@ FAKE_IP = "192.0.2.10"
 FAKE_MAC = "02:00:00:00:00:01"
 
 
-def _load_hub_health():
-    if MODULE_NAME in sys.modules:
-        return sys.modules[MODULE_NAME]
-    spec = importlib.util.spec_from_file_location(MODULE_NAME, HUB_HEALTH_PATH)
+def _load_by_path(name: str, path: Path):
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     # Register before exec_module: dataclasses resolve the module by name.
-    sys.modules[MODULE_NAME] = module
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _load_hub_health():
+    return _load_by_path(MODULE_NAME, HUB_HEALTH_PATH)
+
+
+def _load_faults():
+    return _load_by_path(FAULTS_MODULE_NAME, FAULTS_PATH)
 
 
 @pytest.fixture(scope="session")
 def hh():
     """The hub_health module, loaded by path."""
     return _load_hub_health()
+
+
+@pytest.fixture(scope="session")
+def faults():
+    """The faults module, loaded by path."""
+    return _load_faults()
 
 
 _HEALTHY_FRAME = {

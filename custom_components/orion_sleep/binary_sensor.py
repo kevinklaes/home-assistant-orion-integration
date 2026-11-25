@@ -19,6 +19,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import OrionDataUpdateCoordinator
 from .entity import OrionBaseEntity
+from .faults import with_error_names
 from .hub_health import (
     HubHealth,
     device_problem_attributes,
@@ -191,9 +192,12 @@ class OrionProblemBinarySensor(OrionBaseEntity, BinarySensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict | None:
-        # error_codes (unchanged) plus Orion's own error_descriptions.
-        return device_problem_attributes(
-            self.coordinator.live_devices.get(self._device_id)
+        # error_codes (unchanged), Orion's own error_descriptions, and
+        # error_names (one fault name per code, from faults.py).
+        return with_error_names(
+            device_problem_attributes(
+                self.coordinator.live_devices.get(self._device_id)
+            )
         )
 
 

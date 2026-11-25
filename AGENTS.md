@@ -14,10 +14,11 @@ home-assistant-orion-integration/
 ├── orion_info.py                      # Working CLI script (REST + WS capture tooling)
 ├── pyproject.toml / uv.lock           # uv project; pytest is a dev dependency
 ├── tests/                             # pytest unit tests (pure Python, no Home Assistant)
-│   ├── conftest.py                    # Loads hub_health.py by file path; hand-written frame builder
+│   ├── conftest.py                    # Loads hub_health.py and faults.py by file path; hand-written frame builder
+│   ├── test_faults.py                 # Fault names/advice, Problem state, entity compositions
 │   ├── test_hub_health.py             # Hub-health parsing, safety text, attribute builders
 │   ├── test_restart_tracker.py        # Last Restart derivation rules
-│   └── test_static.py                 # Translation parity, TO_REDACT, hub_health.py import hygiene
+│   └── test_static.py                 # Translation parity, TO_REDACT, hub_health.py/faults.py import hygiene, faults.py licence header and tables
 ├── custom_components/
 │   └── orion_sleep/
 │       ├── __init__.py                # async_setup_entry / async_unload_entry
@@ -26,6 +27,7 @@ home-assistant-orion-integration/
 │       ├── api.py                     # Async aiohttp API client
 │       ├── coordinator.py             # DataUpdateCoordinator + data helpers (incl. hub_health / hub_last_restart accessors)
 │       ├── hub_health.py              # Hub-health parsing (HubHealth, RestartTracker); standard library only, no HA imports
+│       ├── faults.py                  # Fault names/advice adapted from Ember & Tide (PolyForm NC 1.0.0, see NOTICE); standard library only
 │       ├── config_flow.py             # Auth flow (email/phone OTP or API key) + options flow
 │       ├── entity.py                  # Base entity with DeviceInfo + temp conversion helpers
 │       ├── climate.py                 # Bed temperature control (one per zone)
@@ -233,7 +235,7 @@ Entities read from coordinator:
 | Sensor | Left/Right Thermal State | `_{zone_id}_thermal_state` | `status.zones[].thermal_state` from WS — `standby` observed; `heating`/`cooling` expected but unconfirmed. |
 | Binary Sensor | Sleep Session Active | `_session_active` | `session.is_in_progress` (shows "Asleep" / "Not asleep") |
 | Binary Sensor | Sensor 1/2 On Bed | `_sensorN_on_bed` | Occupancy device class. `status_text != "left_bed"`. The WS push itself is realtime, but the topper takes ~30s–1min to decide someone has sat down or left, so `status_text` transitions lag the real event. |
-| Binary Sensor (diag) | Problem | `_problem` | Problem device class. On when `status.safety.error` is truthy or `error_codes` is a non-empty list; `None` with no live payload. Attrs: `error_codes` (when truthy) and `error_descriptions` (when a non-empty list, added 1.1.0). |
+| Binary Sensor (diag) | Problem | `_problem` | Problem device class. On when `status.safety.error` is truthy or `error_codes` is a non-empty list; `None` with no live payload. Attrs: `error_codes` (when truthy), `error_descriptions` (when a non-empty list, added 1.1.0) and `error_names` (when `error_codes` is a list: one name per code from `faults.py`, unknown codes as sent). |
 | Binary Sensor (diag) | Hub Online | `_hub_online` | Connectivity. `status.online`. |
 | Binary Sensor (diag) | Firmware Update Available | `_firmware_update_available` | Update device class, read-only. `status.pending_update.is_available`. Not an `update` entity: the API gives no latest version to compare against. |
 | Binary Sensor (diag) | Firmware Update In Progress | `_firmware_update_in_progress` | Running. `status.firmware_update.in_progress`; attrs `current_step`, `result`. |
@@ -245,8 +247,8 @@ Entities read from coordinator:
 | Sensor (diag) | Hub Firmware | `_hub_firmware` | `status.firmware.cb`. |
 | Sensor (diag) | Panel Firmware | `_panel_firmware` | `status.firmware.ib`. |
 | Sensor (diag) | Firmware Update Step | `_firmware_update_step` | Raw `status.firmware_update.current_step`; attrs `result`, `in_progress`, `started_at`, `updated_at`, `completed_at` (raw numbers, unit unconfirmed). |
-| Sensor (diag) | Problem | `_problem_description` | Text summary of `status.safety`: `OK`, joined descriptions, joined codes, or `Problem reported (no details)`; `None` with no safety block. Attrs `codes`, `descriptions`. |
-| Sensor (diag) | Error Codes | `_error_codes` | `status.safety.error_codes` joined with `, ` (`none` for an empty list), shown raw, never mapped. Attrs `codes`, `descriptions`. |
+| Sensor (diag) | Problem | `_problem_description` | Text summary of `status.safety`: `OK`; when a problem is reported, the first code's known fault name (`faults.problem_state`), else joined descriptions, joined codes, or `Problem reported (no details)`; `None` with no safety block. Attrs `codes`, `descriptions`, `names`, `advice`. |
+| Sensor (diag) | Error Codes | `_error_codes` | `status.safety.error_codes` joined with `, ` (`none` for an empty list); the state stays the raw codes. Attrs `codes`, `descriptions`, and `names`/`advice` (one entry per code from `faults.py`; unknown codes as sent with generic advice) when `error_codes` is a list. |
 | Sensor (diag) | Water Fill | `_water_fill` | Raw `water_fill` (only `unknown` observed). |
 | Sensor (diag) | LED Brightness | `_led_brightness` | `led_brightness` (%), read-only. |
 | Sensor (diag) | Sensor 1/2 Firmware | `_sensorN_firmware` | `status.sensors.sensorN.firmware_version`; attr `hardware_version`. |
@@ -318,9 +320,9 @@ uv sync --locked
 uv run pytest
 ```
 
-The suite is pure Python and makes no network call. It covers `hub_health.py` (parsing, safety text, attribute builders, `RestartTracker`) plus static checks (`strings.json` == `translations/en.json`, `name`/`ip`/`mac` in `diagnostics.TO_REDACT`, no Home Assistant or relative import in `hub_health.py`). CI runs it as the `Run unit tests` step.
+The suite is pure Python and makes no network call. It covers `hub_health.py` (parsing, safety text, attribute builders, `RestartTracker`) and `faults.py` (`describe`, fault names and advice, the Problem state, and the compositions the Error Codes, Problem and `device_problem` entities use), plus static checks (`strings.json` == `translations/en.json`, `name`/`ip`/`mac` in `diagnostics.TO_REDACT`, no Home Assistant or relative import in `hub_health.py` or `faults.py`, `faults.py`'s licence header, and `FAULT_CODES` values all being `FAULTS` keys). CI runs it as the `Run unit tests` step.
 
-The tests load `custom_components/orion_sleep/hub_health.py` **by file path** (`importlib.util.spec_from_file_location` in `tests/conftest.py`). `import custom_components.orion_sleep.<x>` fails outside Home Assistant because the package `__init__.py` imports `homeassistant`, and adding Home Assistant as a dev dependency would pull in hundreds of packages. That is why `hub_health.py` must stay standard-library only, with no relative imports, and why the entity classes hold no logic of their own (they are not exercised by tests). Test frames are hand-written with made-up identifiers; never paste a real capture into `tests/`.
+The tests load `custom_components/orion_sleep/hub_health.py` and `faults.py` **by file path** (`importlib.util.spec_from_file_location` in `tests/conftest.py`). `import custom_components.orion_sleep.<x>` fails outside Home Assistant because the package `__init__.py` imports `homeassistant`, and adding Home Assistant as a dev dependency would pull in hundreds of packages. That is why `hub_health.py` and `faults.py` must stay standard-library only, with no relative imports, and why the entity classes hold no logic of their own (they are not exercised by tests). Test frames are hand-written with made-up identifiers; never paste a real capture into `tests/`.
 
 ### Live API checks
 
@@ -414,7 +416,7 @@ Notable:
 
 ### Reference client comparison (not live-verified)
 
-A third-party Orion client (Ember & Tide, cloud driver at `c46accc`) was read for comparison. Nothing from it changes behaviour here, none of it has been verified against the live API, and none of its code or wording is copied (it is PolyForm Noncommercial). Restated in our words:
+A third-party Orion client (Ember & Tide, cloud driver at `c46accc`) was read for comparison. Only its fault tables are adapted here: `faults.py` holds its fault identifiers, names and advice (from `d86f68a`), which change the Error Codes, Problem and `device_problem` output, under the PolyForm Noncommercial License 1.0.0 with its Required Notice (see `NOTICE`). Nothing else from it is copied, and the points below are restated in our words and are not verified against the live API:
 
 - It reads a top-level `firmware.version` and a top-level `quiet_mode` from the `GET /live` body. This repo's captures carry `status.firmware.cb` / `.ib` instead and no `quiet_mode`. Not live-verified; not in the schema; no entity.
 - It treats the `PUT /live` response body as a live-snapshot payload. This integration does not parse that body (`switch.py`, `climate.py`). Not live-verified.
@@ -449,7 +451,7 @@ The hub firmware's local protocol names these faults. The meanings are our own o
 | `RTEC_FAULT_DETECTED` | Right-side thermoelectric module fault. |
 | `LTEC_FAULT_DETECTED` | Left-side thermoelectric module fault. |
 
-**No code-to-name mapping ships.** The cloud's `status.safety.error_codes` has never been seen non-empty, the spec's only sample is an empty array, and the reference client's cloud driver does not read `status.safety` at all; its fault names come from the hub's local protocol. So the Error Codes and Problem entities show codes and Orion's own `error_descriptions` exactly as reported. **To settle it:** during a real fault, run `python orion_info.py --websocket` (or `--ws-scenario`) and record the frame's `status.safety` block. If the codes match these identifiers, a mapping can be added then.
+**Fault names (`faults.py`).** `faults.py` maps these identifiers, and Ember & Tide's generic keys (`water_flow`, `zone_fault` and so on), to Ember & Tide's names and advice; matching ignores case and surrounding whitespace, and `RTEC`/`LTEC` name their side (the hub's own left/right, not mapped to `zone_a`/`zone_b`). The Error Codes sensor gains `names`/`advice` attributes (state unchanged), the Problem sensor's state is the first known name when a problem is reported, and `device_problem` gains `error_names`. Unknown codes are shown raw with generic advice. The names come from the hub's **local** protocol: it is **not live-verified** that the cloud's `status.safety.error_codes` uses the same identifiers (it has never been seen non-empty, the spec's only sample is an empty array, and the reference client's cloud driver does not read `status.safety`). If the cloud sends something else, every entity falls back to the raw codes. **To confirm:** Kevin captures a frame during a real fault with `python orion_info.py --ws-scenario` (or `--websocket`) and records its `status.safety` block.
 
 ### Events NOT Observed (may exist, were not triggered)
 
@@ -469,7 +471,7 @@ The hub firmware's local protocol names these faults. The meanings are our own o
 - `set_temperature` endpoint not verified against live API
 - Schedule enable/disable (`PUT /v1/sleep-schedules?action=enable`) not verified
 - `async_set_hvac_mode(OFF)` turns the zone off immediately; it does not disable the schedule, so the device may turn itself back on at the next scheduled bedtime
-- Hub-health fields are shown raw where their values are not yet known: `safety.error_codes` (never seen non-empty, item type unconfirmed, no name mapping), `firmware_update.current_step` / `result`, `water_fill`. `firmware_update.*_at` units are unconfirmed and passed through unconverted. `network.uptime` is assumed to be seconds (inferred from one sample). See "Hub health" above.
+- Hub-health fields are shown raw where their values are not yet known: `safety.error_codes` (never seen non-empty, item type unconfirmed; names from Ember & Tide's local-protocol table, not live-verified for the cloud), `firmware_update.current_step` / `result`, `water_fill`. `firmware_update.*_at` units are unconfirmed and passed through unconverted. `network.uptime` is assumed to be seconds (inferred from one sample). See "Hub health" above.
 - **Last Restart may creep if `uptime` freezes.** If the cloud keeps reporting `online: true` with an unchanging `uptime` for more than 120 s, the derived restart time moves forward once per 120 s until the hub is marked offline, then corrects itself on the next good frame. Accepted for now (no live evidence either way). If Last Restart is seen creeping, add an "ignore frames whose uptime did not change" rule to `RestartTracker`.
 - Last Restart is not restored across a Home Assistant restart; it is unknown until the hub next reports in while online.
 - Firmware Update Available is a read-only binary sensor, not an HA `update` entity: the API reports only `pending_update.is_available`, with no latest version, and installing (`trigger_firmware_update`) cannot be tested without a live bed.
