@@ -184,8 +184,8 @@ The raw `status_text`, `is_working`, `firmware_version`, and `hardware_version` 
 | Hub Firmware | Control-board firmware version (`status.firmware.cb`), as reported. |
 | Panel Firmware | Panel (interface) board firmware version (`status.firmware.ib`), as reported. |
 | Firmware Update Step | Raw `status.firmware_update.current_step` (only `complete` observed so far), with `result`, `in_progress`, `started_at`, `updated_at` and `completed_at` attributes. The timestamps are passed through unconverted because their unit is not confirmed. |
-| Problem | Plain-text summary of `status.safety`: `OK` when no error is reported; otherwise Orion's own error descriptions, or the raw codes, or `Problem reported (no details)`. `codes` and `descriptions` attributes. Unknown when the payload has no safety block. |
-| Error Codes | Raw `status.safety.error_codes`, comma-separated, exactly as reported (`none` when the list is empty), with `codes` and `descriptions` attributes. Codes are not translated into names: what they mean in the cloud API is not yet known. |
+| Problem | Plain-text summary of `status.safety`: `OK` when no error is reported. When a problem is reported: the name of the first code that has a known [fault name](#fault-names); otherwise Orion's own error descriptions, or the raw codes, or `Problem reported (no details)`. `codes`, `descriptions`, `names` and `advice` attributes. Unknown when the payload has no safety block. |
+| Error Codes | Raw `status.safety.error_codes`, comma-separated, exactly as reported (`none` when the list is empty), with `codes` and `descriptions` attributes. The state stays the raw codes; `names` and `advice` attributes give one entry per code, in order (see [Fault names](#fault-names)). |
 | Water Fill | Raw `water_fill` value (only `unknown` observed so far). |
 | LED Brightness | Front-panel LED brightness in % (`led_brightness`). Read-only. |
 | Sensor 1 Firmware | `status.sensors.sensor1.firmware_version`, with `hardware_version` as an attribute. |
@@ -200,13 +200,44 @@ All of these are diagnostic entities read from the live device payload (WebSocke
 | Sleep Session | — | `insights.session.is_in_progress`. Rendered as "Asleep" / "Not asleep". |
 | Sensor 1 On Bed | Occupancy | `sensor1.status_text != "left_bed"`. Driven by the topper's own classification, which can take ~30 s to 1 minute to react to someone sitting down or leaving. |
 | Sensor 2 On Bed | Occupancy | `sensor2.status_text != "left_bed"`. Same latency caveat as sensor 1. |
-| Problem | Problem | Diagnostic. On when `status.safety.error` is set or `error_codes` is non-empty. `error_codes` attribute when present, `error_descriptions` attribute when non-empty. |
+| Problem | Problem | Diagnostic. On when `status.safety.error` is set or `error_codes` is non-empty. `error_codes` attribute when present, `error_descriptions` attribute when non-empty, and `error_names` (one [fault name](#fault-names) per code, unknown codes as sent) when `error_codes` is a list. |
 | Hub Online | Connectivity | Diagnostic. `status.online`: whether the cloud can currently reach the hub. |
 | Firmware Update Available | Update | Diagnostic, read-only. `status.pending_update.is_available`. The API gives only this flag, with no version to compare against, so it is a binary sensor rather than an `update` entity, and the integration does not start updates. |
 | Firmware Update In Progress | Running | Diagnostic. `status.firmware_update.in_progress`, with `current_step` and `result` attributes. |
 | Water Fill Mode | — | Diagnostic. `is_in_water_fill_mode`. |
 | Sensor 1 Problem | Problem | Diagnostic. On when topper sensor 1 reports `is_working: false`, off when `true`. `firmware_version` and `hardware_version` attributes. |
 | Sensor 2 Problem | Problem | Same for topper sensor 2. |
+
+### Fault names
+
+The Error Codes and Problem sensors and the Problem binary sensor turn known hub fault identifiers into a plain name and a piece of advice:
+
+| Code | Name | Advice |
+|---|---|---|
+| `PUMP_OFF_TEC_ON` | Water isn't flowing | Check the water level and that the hoses aren't kinked. |
+| `FAN_OFF_TEC_ON` | Fan isn't running | Check the hub's vents aren't blocked. |
+| `PUMP_CURRENT` | Water pump is straining | Check the water level and that the hoses aren't kinked. |
+| `FAN_RPM_OUT_OF_RANGE` | Fan speed out of range | Check the hub's vents aren't blocked. |
+| `NTC_MIN_TEMP_CUTOFF` | Pad reached its low limit | It protects itself and should carry on by itself. If it keeps happening, restart the hub. |
+| `NTC_MAX_TEMP_CUTOFF` | Pad reached its high limit | It cooled itself down. If it doesn't carry on, restart the hub. |
+| `CB_MAX_TEMP_CUTOFF` | Hub is running hot | Check the vents are clear and there's some space around the hub. |
+| `ANGLE_Z_OUT_OF_RANGE` | Hub isn't level | Check the hub is upright and on a flat surface. |
+| `NO_IB_VERSION` | Light panel isn't answering | Restarting the hub may clear it. |
+| `IB_COMM_NOT_OK` | Light panel isn't answering | Restarting the hub may clear it. |
+| `FLASH_NOT_OK` | Hub memory check failed | Restart the hub. If it comes back, contact the maker. |
+| `ACCEL_NOT_OK` | Tilt sensor isn't answering | Restarting the hub may clear it. |
+| `ADC_NOT_OK` | Temperature readings look unreliable | Restarting the hub may clear it. |
+| `AMBIENT_SENSOR_NOT_OK` | Room sensor isn't answering | Room humidity may be missing. Restarting the hub may clear it. |
+| `MANUAL_ERROR_COMMAND` | Hub was put in an error state | Restart the hub to clear it. |
+| `PTC_FAULT_DETECTED` | Power protection reported a fault | Switch the bed off and on at the wall. If it comes back, contact the maker. |
+| `RTEC_FAULT_DETECTED` | Heating and cooling fault (right side) | Restart the hub. If it comes back, contact the maker. |
+| `LTEC_FAULT_DETECTED` | Heating and cooling fault (left side) | Restart the hub. If it comes back, contact the maker. |
+
+- The generic keys behind these names (for example `water_flow`, `zone_fault`) also match, and matching ignores letter case and surrounding spaces.
+- A code that is not in the table is shown raw, as sent, with the generic advice "Restart the hub. If it comes back, contact the maker."
+- The left/right side is the hub's own wording; it is not mapped to `zone_a`/`zone_b`.
+- **Not live-verified.** These identifiers come from the hub's local protocol. The cloud's `status.safety.error_codes` has never been seen non-empty, so it is not confirmed that the cloud sends the same identifiers.
+- The names and advice are adapted from [Ember & Tide](https://github.com/Ncbudd/ember-tide) under the PolyForm Noncommercial License 1.0.0; see [`NOTICE`](NOTICE).
 
 ## Troubleshooting
 
@@ -234,5 +265,7 @@ All of these are diagnostic entities read from the live device payload (WebSocke
 - Zone splitting / merging and guest-user management are not exposed.
 
 ## License
+
+`custom_components/orion_sleep/faults.py` contains fault names and advice adapted from [Ember & Tide](https://github.com/Ncbudd/ember-tide) and is under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0); see [`NOTICE`](NOTICE) for the Required Notice.
 
 This project is not affiliated with or endorsed by Orion Longevity Inc.
