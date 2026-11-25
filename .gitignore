@@ -15,3 +15,7 @@ __pycache__/
 *.egg-info/
 .venv/
 .pytest_cache/
+
+# gascity beads (local runtime state)
+.beads/*
+!.beads/identity.toml
