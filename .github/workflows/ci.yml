@@ -29,3 +29,6 @@ jobs:
 
       - name: Import smoke test for orion_info.py
         run: uv run python -c "import orion_info"
+
+      - name: Run unit tests
+        run: uv run pytest

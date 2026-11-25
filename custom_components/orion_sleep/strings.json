@@ -141,6 +141,24 @@
       },
       "device_problem": {
         "name": "Problem"
+      },
+      "hub_online": {
+        "name": "Hub Online"
+      },
+      "firmware_update_available": {
+        "name": "Firmware Update Available"
+      },
+      "firmware_update_in_progress": {
+        "name": "Firmware Update In Progress"
+      },
+      "water_fill_mode": {
+        "name": "Water Fill Mode"
+      },
+      "sensor1_problem": {
+        "name": "Sensor 1 Problem"
+      },
+      "sensor2_problem": {
+        "name": "Sensor 2 Problem"
       }
     },
     "button": {
@@ -400,6 +418,42 @@
       },
       "partner_monthly_sleep_score": {
         "name": "Partner Monthly Sleep Score"
+      },
+      "wifi_signal": {
+        "name": "Wi-Fi Signal"
+      },
+      "last_restart": {
+        "name": "Last Restart"
+      },
+      "last_seen": {
+        "name": "Last Seen"
+      },
+      "hub_firmware": {
+        "name": "Hub Firmware"
+      },
+      "panel_firmware": {
+        "name": "Panel Firmware"
+      },
+      "firmware_update_step": {
+        "name": "Firmware Update Step"
+      },
+      "problem_description": {
+        "name": "Problem"
+      },
+      "error_codes": {
+        "name": "Error Codes"
+      },
+      "water_fill": {
+        "name": "Water Fill"
+      },
+      "led_brightness": {
+        "name": "LED Brightness"
+      },
+      "sensor1_firmware": {
+        "name": "Sensor 1 Firmware"
+      },
+      "sensor2_firmware": {
+        "name": "Sensor 2 Firmware"
       }
     }
   }

@@ -1,0 +1,6 @@
+custom_components/orion_sleep/faults.py contains fault identifiers, names and
+advice adapted from Ember & Tide (https://github.com/Ncbudd/ember-tide),
+licensed under the PolyForm Noncommercial License 1.0.0:
+https://polyformproject.org/licenses/noncommercial/1.0.0
+
+Required Notice: Copyright (c) 2026 Ncbudd (https://github.com/Ncbudd/ember-tide)

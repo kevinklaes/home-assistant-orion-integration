@@ -6,3 +6,11 @@ dependencies = [
     "requests>=2.34.2",
     "websockets>=16.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

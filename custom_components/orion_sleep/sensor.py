@@ -14,7 +14,12 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfTemperature, UnitOfTime
+from homeassistant.const import (
+    PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+    UnitOfTemperature,
+    UnitOfTime,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -22,6 +27,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import CONF_ZONE_LEFT, DEFAULT_ZONE_LEFT
 from .coordinator import OrionDataUpdateCoordinator
 from .entity import OrionBaseEntity
+from .faults import problem_state, with_fault_names
+from .hub_health import (
+    HubHealth,
+    error_codes_attributes,
+    pad_sensor_firmware_attributes,
+    problem_attributes,
+    update_step_attributes,
+)
 
 
 # Topper sensors exposed on every WS payload. Mapping to zone_a/zone_b
@@ -482,6 +495,18 @@ async def async_setup_entry(
             )
             entities.append(
                 OrionZoneHrvSensor(coordinator, device_id, zone_id, side)
+            )
+
+        # Hub health: once per device (it belongs to the hub, not a user),
+        # so never duplicated for a partner account.
+        for description in HUB_HEALTH_SENSORS:
+            entities.append(
+                OrionHubHealthSensor(coordinator, device_id, description)
+            )
+        entities.append(OrionLastRestartSensor(coordinator, device_id))
+        for sensor_name in _TOPPER_SENSORS:
+            entities.append(
+                OrionPadSensorFirmwareSensor(coordinator, device_id, sensor_name)
             )
 
     async_add_entities(entities)
@@ -1285,3 +1310,168 @@ class OrionZoneHrvSensor(OrionBaseEntity, SensorEntity):
         if not session:
             return None
         return session.get("hrv", {}).get("average")
+
+
+# ── Hub health (diagnostic) ───────────────────────────────────────────────
+#
+# Values come from coordinator.hub_health(), which parses the live payload
+# in hub_health.py. These classes hold no parsing logic. None of them
+# overrides ``available``: a missing value shows as unknown, and the
+# coordinator's own availability applies.
+
+
+@dataclass(frozen=True, kw_only=True)
+class OrionHubSensorDescription(SensorEntityDescription):
+    """Describe a hub-health sensor read from a ``HubHealth`` snapshot."""
+
+    value_fn: Callable[[HubHealth], Any]
+    attrs_fn: Callable[[HubHealth], dict[str, Any] | None] | None = None
+
+
+HUB_HEALTH_SENSORS: tuple[OrionHubSensorDescription, ...] = (
+    OrionHubSensorDescription(
+        key="wifi_signal",
+        translation_key="wifi_signal",
+        device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda health: health.wifi_rssi,
+    ),
+    OrionHubSensorDescription(
+        key="last_seen",
+        translation_key="last_seen",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_registry_enabled_default=False,
+        value_fn=lambda health: health.last_seen,
+    ),
+    OrionHubSensorDescription(
+        key="hub_firmware",
+        translation_key="hub_firmware",
+        icon="mdi:chip",
+        value_fn=lambda health: health.hub_firmware,
+    ),
+    OrionHubSensorDescription(
+        key="panel_firmware",
+        translation_key="panel_firmware",
+        icon="mdi:chip",
+        value_fn=lambda health: health.panel_firmware,
+    ),
+    OrionHubSensorDescription(
+        key="firmware_update_step",
+        translation_key="firmware_update_step",
+        icon="mdi:progress-download",
+        value_fn=lambda health: health.update_step,
+        attrs_fn=update_step_attributes,
+    ),
+    OrionHubSensorDescription(
+        key="problem_description",
+        translation_key="problem_description",
+        icon="mdi:alert-circle-outline",
+        value_fn=lambda health: problem_state(health.problem_text, health.error_codes),
+        attrs_fn=lambda health: with_fault_names(
+            problem_attributes(health), health.error_codes
+        ),
+    ),
+    OrionHubSensorDescription(
+        key="error_codes",
+        translation_key="error_codes",
+        icon="mdi:alert-octagon-outline",
+        value_fn=lambda health: health.error_codes_text,
+        attrs_fn=lambda health: with_fault_names(
+            error_codes_attributes(health), health.error_codes
+        ),
+    ),
+    OrionHubSensorDescription(
+        key="water_fill",
+        translation_key="water_fill",
+        icon="mdi:water",
+        value_fn=lambda health: health.water_fill,
+    ),
+    OrionHubSensorDescription(
+        key="led_brightness",
+        translation_key="led_brightness",
+        icon="mdi:brightness-6",
+        native_unit_of_measurement=PERCENTAGE,
+        value_fn=lambda health: health.led_brightness,
+    ),
+)
+
+
+class OrionHubHealthSensor(OrionBaseEntity, SensorEntity):
+    """Diagnostic hub-health sensor driven by an ``OrionHubSensorDescription``."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    entity_description: OrionHubSensorDescription
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+        description: OrionHubSensorDescription,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self.entity_description = description
+        self._attr_unique_id = f"{device_id}_{description.key}"
+
+    @property
+    def native_value(self) -> Any:
+        return self.entity_description.value_fn(
+            self.coordinator.hub_health(self._device_id)
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        if self.entity_description.attrs_fn is None:
+            return None
+        return self.entity_description.attrs_fn(
+            self.coordinator.hub_health(self._device_id)
+        )
+
+
+class OrionLastRestartSensor(OrionBaseEntity, SensorEntity):
+    """When the hub last restarted, derived from its reported uptime."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_translation_key = "last_restart"
+    _attr_icon = "mdi:restart"
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"{device_id}_last_restart"
+
+    @property
+    def native_value(self) -> Any:
+        return self.coordinator.hub_last_restart(self._device_id)
+
+
+class OrionPadSensorFirmwareSensor(OrionBaseEntity, SensorEntity):
+    """Firmware version reported by one topper sensor pad."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:chip"
+
+    def __init__(
+        self,
+        coordinator: OrionDataUpdateCoordinator,
+        device_id: str,
+        sensor_name: str,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._sensor_name = sensor_name
+        self._attr_translation_key = f"{sensor_name}_firmware"
+        self._attr_unique_id = f"{device_id}_{sensor_name}_firmware"
+
+    @property
+    def native_value(self) -> str | None:
+        health = self.coordinator.hub_health(self._device_id)
+        return health.pad_sensor(self._sensor_name).firmware_version
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        health = self.coordinator.hub_health(self._device_id)
+        return pad_sensor_firmware_attributes(health.pad_sensor(self._sensor_name))

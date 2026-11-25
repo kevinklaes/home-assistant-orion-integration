@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -19,6 +20,7 @@ from .const import (
     DEFAULT_INSIGHTS_DAYS,
     DEFAULT_SCAN_INTERVAL,
 )
+from .hub_health import HubHealth, RestartTracker, parse_hub_health
 from .util import dedupe_devices_by_id
 from .websocket import OrionWebSocketManager, OrionWsState
 
@@ -63,6 +65,9 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         # real event by ~30s–1min because the topper itself is slow to
         # decide; the WS frame arrival is not the bottleneck there.
         self.live_devices: dict[str, dict] = {}
+        # Per-device "last restart" trackers, fed only when a new live
+        # payload arrives (see _observe_hub_health).
+        self._restart_trackers: dict[str, RestartTracker] = {}
         self.user: dict = {}
         self.user_id: str = ""
         # Partner (second-side) account profile. Populated in _async_setup
@@ -197,6 +202,7 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
                 continue
             try:
                 new_live[dev_id] = await self.api_client.get_live_device(serial)
+                self._observe_hub_health(dev_id, new_live[dev_id])
             except OrionAuthError as err:
                 raise ConfigEntryAuthFailed(str(err)) from err
             except (OrionApiError, OrionConnectionError) as err:
@@ -549,6 +555,7 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         previous = self.live_devices.get(dev_id, {})
         merged = {**previous, **payload}
         self.live_devices[dev_id] = merged
+        self._observe_hub_health(dev_id, merged)
 
         # Stash the timeline (today's scheduled actions) on the coordinator
         # data so sensors can read it without polling /v1/sleep-schedules
@@ -583,6 +590,37 @@ class OrionDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         """Stop the WS manager before the coordinator is disposed."""
         await self._ws_manager.async_stop()
         await super().async_shutdown()
+
+    # ── Hub health (parsed from the live payload) ─────────────────────
+    #
+    # All parsing lives in hub_health.py (no Home Assistant imports, unit
+    # tested by path). Entities read hub health only through these
+    # accessors.
+
+    def hub_health(self, device_id: str) -> HubHealth:
+        """Return the hub-health snapshot for a device's latest live payload."""
+        return parse_hub_health(self.live_devices.get(device_id))
+
+    def hub_last_restart(self, device_id: str) -> datetime | None:
+        """Return the derived last-restart time as an aware UTC datetime."""
+        tracker = self._restart_trackers.get(device_id)
+        if tracker is None or tracker.restart_at is None:
+            return None
+        try:
+            return datetime.fromtimestamp(tracker.restart_at, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+
+    def _observe_hub_health(self, device_id: str, live: Any) -> None:
+        """Feed a newly arrived live payload to the device's restart tracker.
+
+        Called only where a new payload arrives (WS frame, successful REST
+        fetch). Never on paths that keep an old payload: observing an old
+        uptime against a newer clock would move the derived time forward.
+        """
+        health = parse_hub_health(live)
+        tracker = self._restart_trackers.setdefault(device_id, RestartTracker())
+        tracker.observe(health.uptime_seconds, health.online, time.time())
 
     # ── Live per-sensor helpers (fed by the WebSocket stream) ─────────
     #

@@ -12,20 +12,32 @@ home-assistant-orion-integration/
 ├── README.md                          # User-facing install/usage docs
 ├── openapi.yaml                       # OpenAPI 3.1 spec (reverse-engineered; WS section validated on-wire)
 ├── orion_info.py                      # Working CLI script (REST + WS capture tooling)
+├── pyproject.toml / uv.lock           # uv project; pytest is a dev dependency
+├── tests/                             # pytest unit tests (pure Python, no Home Assistant)
+│   ├── conftest.py                    # Loads hub_health.py and faults.py by file path; hand-written frame builder
+│   ├── test_faults.py                 # Fault names/advice, Problem state, entity compositions
+│   ├── test_hub_health.py             # Hub-health parsing, safety text, attribute builders
+│   ├── test_restart_tracker.py        # Last Restart derivation rules
+│   └── test_static.py                 # Translation parity, TO_REDACT, hub_health.py/faults.py import hygiene, faults.py licence header and tables
 ├── custom_components/
 │   └── orion_sleep/
 │       ├── __init__.py                # async_setup_entry / async_unload_entry
-│       ├── manifest.json              # HA integration manifest (v1.0.0)
+│       ├── manifest.json              # HA integration manifest (v1.1.0)
 │       ├── const.py                   # DOMAIN, config keys, defaults, temp lookup table
 │       ├── api.py                     # Async aiohttp API client
-│       ├── coordinator.py             # DataUpdateCoordinator + data helpers
+│       ├── coordinator.py             # DataUpdateCoordinator + data helpers (incl. hub_health / hub_last_restart accessors)
+│       ├── hub_health.py              # Hub-health parsing (HubHealth, RestartTracker); standard library only, no HA imports
+│       ├── faults.py                  # Fault names/advice adapted from Ember & Tide (PolyForm NC 1.0.0, see NOTICE); standard library only
 │       ├── config_flow.py             # Auth flow (email/phone OTP or API key) + options flow
 │       ├── entity.py                  # Base entity with DeviceInfo + temp conversion helpers
-│       ├── climate.py                 # Bed temperature control
-│       ├── sensor.py                  # Sleep insight + schedule + offset + WS state sensors (18 per device)
-│       ├── websocket.py                # Live device WebSocket client (per-device aiohttp)
-│       ├── binary_sensor.py           # Sleep session active
-│       ├── switch.py                  # Power (user-away) + sleep schedule switches
+│       ├── climate.py                 # Bed temperature control (one per zone)
+│       ├── number.py                  # Per-phase schedule temperature-offset sliders
+│       ├── sensor.py                  # Insight, trend, schedule, offset, live WS and hub-health sensors
+│       ├── websocket.py               # Live device WebSocket client (per-device aiohttp)
+│       ├── binary_sensor.py           # Session active, on-bed, problem and hub-health binary sensors
+│       ├── switch.py                  # Power, away mode and sleep schedule switches
+│       ├── button.py                  # Device reboot button
+│       ├── util.py                    # Small helpers with no HA imports
 │       ├── diagnostics.py             # Diagnostics with PII redaction
 │       ├── strings.json               # UI translations
 │       ├── translations/
@@ -182,13 +194,16 @@ Entities read from coordinator:
               + schedule.bedtime_is_active
   - Diagnostic sensors: per-device WS connection state
                         + per-topper-sensor raw status_text
+                        + hub health via coordinator.hub_health() /
+                          hub_last_restart() (parsed by hub_health.py
+                          from live_devices; WS or GET /live alike)
 ```
 
 ## Entities
 
 | Platform | Entity | Key / unique_id suffix | Data Source |
 |----------|--------|----------------------|-------------|
-| Climate | Bed Climate | `_climate` | Target temp from live setpoint `zones[].temp`; current temp from live measured `status.zones[].temp` (WS, ~2s) |
+| Climate | Bed Climate Left / Right | `_{zone_id}_climate` | One per zone. Target temp from live setpoint `zones[].temp`; current temp from live measured `status.zones[].temp` (WS, ~2s) |
 | Sensor | Sleep Score Left / Right | `_{zone_id}_sleep_score` | per-zone `session.score` (via `get_latest_session_for_zone`) with `quality_rating` extra attr |
 | Sensor | Total Sleep Time | `_total_sleep_time` | `session.sleep_summary.time_asleep` (formatted as "Xh Ym") |
 | Sensor | Deep Sleep Time | `_deep_sleep_time` | `session.sleep_summary.deep_sleep` |
@@ -200,6 +215,11 @@ Entities read from coordinator:
 | Sensor | HRV Left / Right | `_{zone_id}_hrv` | per-zone `session.hrv.average` (via `get_latest_session_for_zone`), current value only |
 | Sensor | Body Movement Rate | `_body_movement_rate` | `session.movement.movement_rate` |
 | Sensor | Restless Time | `_restless_time` | `session.movement.total_seconds` (formatted as "Xm Ys") |
+| Sensor | Total / Deep / REM / Light Sleep (minutes), Awake Time (minutes) | `_total_sleep_minutes`, `_deep_sleep_minutes`, `_rem_sleep_minutes`, `_light_sleep_minutes`, `_awake_time_minutes` | Same `sleep_summary` fields as numeric minutes with `state_class=measurement` (for Influx/Grafana) |
+| Sensor | Breathing Disturbances | `_breathing_disturbances` | `/v3/insights` `metrics.breathing_disturbances.value` (seconds), with `insight`, comparison range and `ahi` (from the matching `/v2/insights` session's `apnea`) attrs |
+| Sensor | Consistency | `_consistency` | `/v3/insights` day-granularity `metrics.consistency.value` (%) |
+| Sensor | Sleep Debt | `_sleep_debt` | `/v3/insights` day-granularity `metrics.sleep_debt.value` (minutes), with `need`/`status`/`insight` attrs |
+| Sensor | Weekly / Monthly Sleep Score | `_week_sleep_score`, `_month_sleep_score` | `/v3/insights` week/month period `overview.score`, with per-metric summary attrs |
 | Sensor | Bedtime | `_bedtime` | `today_sleep_schedule.bedtime` (HH:mm) |
 | Sensor | Wake-up Time | `_wakeup_time` | `today_sleep_schedule.wakeup` |
 | Sensor | Schedule Duration | `_schedule_duration` | Calculated from bedtime/wakeup (handles overnight) |
@@ -215,6 +235,23 @@ Entities read from coordinator:
 | Sensor | Left/Right Thermal State | `_{zone_id}_thermal_state` | `status.zones[].thermal_state` from WS — `standby` observed; `heating`/`cooling` expected but unconfirmed. |
 | Binary Sensor | Sleep Session Active | `_session_active` | `session.is_in_progress` (shows "Asleep" / "Not asleep") |
 | Binary Sensor | Sensor 1/2 On Bed | `_sensorN_on_bed` | Occupancy device class. `status_text != "left_bed"`. The WS push itself is realtime, but the topper takes ~30s–1min to decide someone has sat down or left, so `status_text` transitions lag the real event. |
+| Binary Sensor (diag) | Problem | `_problem` | Problem device class. On when `status.safety.error` is truthy or `error_codes` is a non-empty list; `None` with no live payload. Attrs: `error_codes` (when truthy), `error_descriptions` (when a non-empty list, added 1.1.0) and `error_names` (when `error_codes` is a list: one name per code from `faults.py`, unknown codes as sent). |
+| Binary Sensor (diag) | Hub Online | `_hub_online` | Connectivity. `status.online`. |
+| Binary Sensor (diag) | Firmware Update Available | `_firmware_update_available` | Update device class, read-only. `status.pending_update.is_available`. Not an `update` entity: the API gives no latest version to compare against. |
+| Binary Sensor (diag) | Firmware Update In Progress | `_firmware_update_in_progress` | Running. `status.firmware_update.in_progress`; attrs `current_step`, `result`. |
+| Binary Sensor (diag) | Water Fill Mode | `_water_fill_mode` | `is_in_water_fill_mode`. |
+| Binary Sensor (diag) | Sensor 1/2 Problem | `_sensorN_problem` | Problem. On when `status.sensors.sensorN.is_working` is `false`, off when `true`, else `None`; attrs `firmware_version`, `hardware_version`. |
+| Sensor (diag) | Wi-Fi Signal | `_wifi_signal` | `status.network.rssi` (dBm). |
+| Sensor (diag) | Last Restart | `_last_restart` | Timestamp derived from `status.network.uptime` by `RestartTracker` (`hub_health.py`); see "Hub health" below. |
+| Sensor (diag) | Last Seen | `_last_seen` | Timestamp from `status.network.last_seen` (epoch seconds). Disabled by default (changes every frame). |
+| Sensor (diag) | Hub Firmware | `_hub_firmware` | `status.firmware.cb`. |
+| Sensor (diag) | Panel Firmware | `_panel_firmware` | `status.firmware.ib`. |
+| Sensor (diag) | Firmware Update Step | `_firmware_update_step` | Raw `status.firmware_update.current_step`; attrs `result`, `in_progress`, `started_at`, `updated_at`, `completed_at` (raw numbers, unit unconfirmed). |
+| Sensor (diag) | Problem | `_problem_description` | Text summary of `status.safety`: `OK`; when a problem is reported, the first code's known fault name (`faults.problem_state`), else joined descriptions, joined codes, or `Problem reported (no details)`; `None` with no safety block. Attrs `codes`, `descriptions`, `names`, `advice`. |
+| Sensor (diag) | Error Codes | `_error_codes` | `status.safety.error_codes` joined with `, ` (`none` for an empty list); the state stays the raw codes. Attrs `codes`, `descriptions`, and `names`/`advice` (one entry per code from `faults.py`; unknown codes as sent with generic advice) when `error_codes` is a list. |
+| Sensor (diag) | Water Fill | `_water_fill` | Raw `water_fill` (only `unknown` observed). |
+| Sensor (diag) | LED Brightness | `_led_brightness` | `led_brightness` (%), read-only. |
+| Sensor (diag) | Sensor 1/2 Firmware | `_sensorN_firmware` | `status.sensors.sensorN.firmware_version`; attr `hardware_version`. |
 | Switch | Power | `_power` | On = all zones on, Off = all zones off. Uses `PUT /v1/devices/{id}/live` (canonical power primitive). State read from each zone's `on`/`is_on` field. |
 | Switch | Away Mode | `_away_mode` | On = user marked away, Off = user present. State read from `zones[*].user` (null across all zones = away). `POST /v1/sleep-configurations/user-away`. Returns `400 "User has no previous device to return to"` on no-op toggle — swallowed in the switch. |
 | Switch | Sleep Schedule | `_sleep_schedule` | `today_sleep_schedule.bedtime_is_active`. Toggle via `update_sleep_schedule`. |
@@ -222,13 +259,20 @@ Entities read from coordinator:
 | Number | Asleep Phase 1 Offset | `_phase_1_temp_offset` | As above, `phase_1_temp` field. |
 | Number | Asleep Phase 2 Offset | `_phase_2_temp_offset` | As above, `phase_2_temp` field. |
 | Number | Wake Up Temperature Offset | `_wakeup_temp_offset` | As above, `wakeup_temp` field. |
+| Button (config) | Reboot | `_reboot` | `POST /v1/devices/{deviceId}/action` with `device_reboot`. |
 
-**Per device: 1 climate + 4 number + 28 sensors + 3 binary sensors + 3 switches = 39 entities**
+Hub-health entities (all `EntityCategory.DIAGNOSTIC`) read `coordinator.hub_health(device_id)` / `coordinator.hub_last_restart(device_id)`, never the raw payload. They are created once per device, never duplicated for a partner account. Every text state is cut to 255 characters (full lists stay in attributes), and a missing or wrongly typed field gives `None`, never a default. `status.network.name`, `.ip` and `.mac` are not parsed at all.
 
-- 28 sensors = 11 insights + 5 schedule + 1 current-temp-offset + 1 live-connection + 6 per-sensor live (2× HR + 2× BR + 2× diag status_text) + 4 zone live (2× measured temp + 2× thermal state).
+With a partner account linked, these get a `Partner` twin (`_partner_` unique_id infix, `partner_` translation key): the 9 insight sensors, 5 minute sensors, 5 schedule sensors, Current Temp Offset, Breathing Disturbances, Consistency, Sleep Debt, Temperature Recommendations, Weekly/Monthly Sleep Score, Sleep Session Active, Away Mode, Sleep Schedule and the 4 offset sliders.
+
+**Per device, no partner account: 2 climate + 4 number + 53 sensors + 10 binary sensors + 3 switches + 1 button = 73 entities** (55 before 1.1.0; counted from each platform's `async_setup_entry`)
+
+- 53 sensors = 9 insights + 5 sleep-stage minutes + 5 schedule + 1 current-temp-offset + 1 breathing disturbances + 1 consistency + 1 sleep debt + 1 temperature recommendations + 2 trend scores (week/month) + 1 live-connection + 6 per-sensor live (2× HR + 2× BR + 2× diag status_text) + 8 per-zone (2× measured temp + 2× thermal state + 2× sleep score + 2× HRV) + 12 hub health (Wi-Fi Signal, Last Restart, Last Seen, Hub Firmware, Panel Firmware, Firmware Update Step, Problem, Error Codes, Water Fill, LED Brightness, 2× Sensor N Firmware).
+- 10 binary sensors: Sleep Session Active + 2× On Bed + Problem + 6 hub health (Hub Online, Firmware Update Available, Firmware Update In Progress, Water Fill Mode, 2× Sensor N Problem).
 - 4 number sliders: one per schedule-phase temperature offset (bedtime / phase_1 / phase_2 / wakeup).
-- 3 binary sensors: Sleep Session Active + 2× On Bed (sensor1/sensor2).
 - 3 switches: Power, Away Mode, Sleep Schedule.
+- 1 button: Reboot.
+- A linked partner account adds 33 more (26 sensors, 1 binary sensor, 2 switches, 4 numbers): 106 in total.
 
 ### Sensor Implementation Notes
 
@@ -268,6 +312,19 @@ Entities read from coordinator:
 | `update_sleep_schedule(schedule_data, action)` | `PUT /v1/sleep-schedules` | **Unverified** for enable/disable action |
 
 ## Testing
+
+### Unit tests
+
+```bash
+uv sync --locked
+uv run pytest
+```
+
+The suite is pure Python and makes no network call. It covers `hub_health.py` (parsing, safety text, attribute builders, `RestartTracker`) and `faults.py` (`describe`, fault names and advice, the Problem state, and the compositions the Error Codes, Problem and `device_problem` entities use), plus static checks (`strings.json` == `translations/en.json`, `name`/`ip`/`mac` in `diagnostics.TO_REDACT`, no Home Assistant or relative import in `hub_health.py` or `faults.py`, `faults.py`'s licence header, and `FAULT_CODES` values all being `FAULTS` keys). CI runs it as the `Run unit tests` step.
+
+The tests load `custom_components/orion_sleep/hub_health.py` and `faults.py` **by file path** (`importlib.util.spec_from_file_location` in `tests/conftest.py`). `import custom_components.orion_sleep.<x>` fails outside Home Assistant because the package `__init__.py` imports `homeassistant`, and adding Home Assistant as a dev dependency would pull in hundreds of packages. That is why `hub_health.py` and `faults.py` must stay standard-library only, with no relative imports, and why the entity classes hold no logic of their own (they are not exercised by tests). Test frames are hand-written with made-up identifiers; never paste a real capture into `tests/`.
+
+### Live API checks
 
 Run `orion_info.py` to verify API connectivity and response shapes:
 ```bash
@@ -346,6 +403,55 @@ Notable:
 - `status.zones[].thermal_state` was only observed as `"standby"`; heating/cooling values are plausible but unobserved.
 - `sensors.sensor*.status_text` observed values: `"left_bed"` (empty bed, HR=BR=0) and `"normal"` (occupied, realistic HR/BR). The topper also reports HR=BR=255 as a "no reading yet" sentinel in the first ~2s after someone sits down. Other values hinted at by the app strings (e.g. sitting/asleep/error) are plausible but unobserved.
 - `sensors.sensor*.sign_of_asleep` / `sign_of_wake_up` only ever observed as `1`; likely edge triggers that momentarily take another value during stage transitions (unconfirmed — a full sleep session hasn't been captured).
+- `status.safety.error_codes` has only ever been captured as an empty array. Its `string` item type in `openapi.yaml` is inferred, not confirmed, and whether the codes are the hub firmware's fault identifiers (see below) is unknown.
+- `status.network.uptime` is treated as **seconds since boot**, inferred from one sample (266238). If it is actually milliseconds, Last Restart would jump on every frame (each frame's derived time would be far off the stored one); the fix is a one-line unit change in `hub_health.py`.
+- `status.firmware_update.started_at` / `updated_at` / `completed_at`: unit (ms vs. seconds) unconfirmed. They are passed through raw as attributes. If `updated_at` turns out to change every frame it will add recorder rows and should be dropped from the attributes.
+- `current_step` has only been seen as `complete`, `result` as `success`, `water_fill` as `unknown`, `is_in_water_fill_mode` as `false`. The integration shows the raw values without mapping.
+
+### Hub health
+
+`hub_health.py` parses the live payload into a frozen `HubHealth` snapshot (and `PadSensorHealth` per topper sensor). The coordinator exposes `hub_health(device_id)` (parsed on every read from `live_devices`, so it is identical for WS and `GET /live` payloads) and `hub_last_restart(device_id)`.
+
+**Last Restart** comes from one `RestartTracker` per device. It is fed only when a *new* payload arrives (each WS frame, each successful `GET /live`), never on the poll paths that keep an old payload. Rules: offline or missing uptime changes nothing; the first value is stored; uptime going backwards stores a new time; a derived time more than 120 s away from the stored one stores a new time; otherwise the stored time is kept. It is not restored across a Home Assistant restart.
+
+### Reference client comparison (not live-verified)
+
+A third-party Orion client (Ember & Tide, cloud driver at `c46accc`) was read for comparison. Only its fault tables are adapted here: `faults.py` holds its fault identifiers, names and advice (from `d86f68a`), which change the Error Codes, Problem and `device_problem` output, under the PolyForm Noncommercial License 1.0.0 with its Required Notice (see `NOTICE`). Nothing else from it is copied, and the points below are restated in our words and are not verified against the live API:
+
+- It reads a top-level `firmware.version` and a top-level `quiet_mode` from the `GET /live` body. This repo's captures carry `status.firmware.cb` / `.ib` instead and no `quiet_mode`. Not live-verified; not in the schema; no entity.
+- It treats the `PUT /live` response body as a live-snapshot payload. This integration does not parse that body (`switch.py`, `climate.py`). Not live-verified.
+- It sets an explicit `User-Agent` on REST calls. This integration sends aiohttp's default on REST (WS sends `okhttp/4.12.0`), and requests work today. Not live-verified that one is required.
+- It also assumes `sensor1` is left and `sensor2` is right. Still unverified; entities stay named per sensor.
+- It uses the same "heart/breath rate of 0 or 255 means no reading" rule as this integration.
+- It polls `GET /live` every 10 s and has no WebSocket. This integration uses the WS plus a `GET /live` fallback each scan interval (default 600 s), so with the WS down hub-health entities refresh once per scan interval.
+- Zone ids `zone_a` / `zone_b`, left = `zone_a` by default, setpoints 10–45 °C: same as here.
+
+### Hub fault identifiers (local protocol, not live-verified for the cloud API)
+
+The hub firmware's local protocol names these faults. The meanings are our own one-line summaries.
+
+| Identifier | Meaning |
+| --- | --- |
+| `PUMP_OFF_TEC_ON` | Thermoelectric unit running while the water pump is not. |
+| `FAN_OFF_TEC_ON` | Thermoelectric unit running while the fan is not. |
+| `PUMP_CURRENT` | Pump current outside its expected range. |
+| `FAN_RPM_OUT_OF_RANGE` | Fan speed outside its limits. |
+| `NTC_MIN_TEMP_CUTOFF` | A temperature probe reached the low cut-off. |
+| `NTC_MAX_TEMP_CUTOFF` | A temperature probe reached the high cut-off. |
+| `CB_MAX_TEMP_CUTOFF` | Control board too hot. |
+| `ANGLE_Z_OUT_OF_RANGE` | Hub is tilted or not level. |
+| `NO_IB_VERSION` | Control board cannot read the panel board's version. |
+| `IB_COMM_NOT_OK` | Communication with the panel board is failing. |
+| `FLASH_NOT_OK` | Flash storage fault. |
+| `ACCEL_NOT_OK` | Tilt sensor (accelerometer) fault. |
+| `ADC_NOT_OK` | Analog-to-digital converter fault; temperature readings are unreliable. |
+| `AMBIENT_SENSOR_NOT_OK` | Room sensor fault. |
+| `MANUAL_ERROR_COMMAND` | An error raised on purpose by a command. |
+| `PTC_FAULT_DETECTED` | PTC protection fault; the reference project treats it as a power fault. |
+| `RTEC_FAULT_DETECTED` | Right-side thermoelectric module fault. |
+| `LTEC_FAULT_DETECTED` | Left-side thermoelectric module fault. |
+
+**Fault names (`faults.py`).** `faults.py` maps these identifiers, and Ember & Tide's generic keys (`water_flow`, `zone_fault` and so on), to Ember & Tide's names and advice; matching ignores case and surrounding whitespace, and `RTEC`/`LTEC` name their side (the hub's own left/right, not mapped to `zone_a`/`zone_b`). The Error Codes sensor gains `names`/`advice` attributes (state unchanged), the Problem sensor's state is the first known name when a problem is reported, and `device_problem` gains `error_names`. Unknown codes are shown raw with generic advice. The names come from the hub's **local** protocol: it is **not live-verified** that the cloud's `status.safety.error_codes` uses the same identifiers (it has never been seen non-empty, the spec's only sample is an empty array, and the reference client's cloud driver does not read `status.safety`). If the cloud sends something else, every entity falls back to the raw codes. **To confirm:** Kevin captures a frame during a real fault with `python orion_info.py --ws-scenario` (or `--websocket`) and records its `status.safety` block.
 
 ### Events NOT Observed (may exist, were not triggered)
 
@@ -357,14 +463,18 @@ Notable:
 
 ## Known Issues
 
-- **Unused translations**: `bed_climate_left` and `bed_climate_right` defined in strings.json but no entities use them
+- **Unused translation**: `bed_climate` (unsuffixed) is defined in strings.json but no entity uses it; the climate entities use `bed_climate_left` / `bed_climate_right`.
+- **Two entities named "Problem"**: the `device_problem` binary sensor and the `problem_description` text sensor share a display name (entity ids differ by platform). If it reads badly, rename the sensor to "Problem Description" in `strings.json`; its `unique_id` stays the same.
 
 ## Known Limitations / Future Work
 
 - `set_temperature` endpoint not verified against live API
 - Schedule enable/disable (`PUT /v1/sleep-schedules?action=enable`) not verified
 - `async_set_hvac_mode(OFF)` turns the zone off immediately; it does not disable the schedule, so the device may turn itself back on at the next scheduled bedtime
-- Firmware versions are not exposed as dedicated entities yet (available in the WS payload at `status.firmware.{cb,ib}` and on each sensor block's `firmware_version` — plumb through if surfacing them becomes useful)
+- Hub-health fields are shown raw where their values are not yet known: `safety.error_codes` (never seen non-empty, item type unconfirmed; names from Ember & Tide's local-protocol table, not live-verified for the cloud), `firmware_update.current_step` / `result`, `water_fill`. `firmware_update.*_at` units are unconfirmed and passed through unconverted. `network.uptime` is assumed to be seconds (inferred from one sample). See "Hub health" above.
+- **Last Restart may creep if `uptime` freezes.** If the cloud keeps reporting `online: true` with an unchanging `uptime` for more than 120 s, the derived restart time moves forward once per 120 s until the hub is marked offline, then corrects itself on the next good frame. Accepted for now (no live evidence either way). If Last Restart is seen creeping, add an "ignore frames whose uptime did not change" rule to `RestartTracker`.
+- Last Restart is not restored across a Home Assistant restart; it is unknown until the hub next reports in while online.
+- Firmware Update Available is a read-only binary sensor, not an HA `update` entity: the API reports only `pending_update.is_available`, with no latest version, and installing (`trigger_firmware_update`) cannot be tested without a live bed.
 - HRV values frequently null in real data
 - No way to start/stop sleep sessions via API
 - Zone splitting/merging not supported
