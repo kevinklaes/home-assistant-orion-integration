@@ -6,29 +6,16 @@ on:
     branches: [main]
 
 jobs:
-  smoke-test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install dependencies
-        run: uv sync --locked
-
-      - name: Validate manifest.json and hacs.json
-        run: |
-          uv run python -c "import json; json.load(open('custom_components/orion_sleep/manifest.json')); json.load(open('hacs.json'))"
-
-      - name: Syntax-check custom_components/orion_sleep
-        run: uv run python -m py_compile custom_components/orion_sleep/*.py
-
-      - name: Import smoke test for orion_info.py
-        run: uv run python -c "import orion_info"
-
-      - name: Run unit tests
-        run: uv run pytest
+  python-ci:
+    permissions:
+      contents: read
+    uses: kevinklaes/shared-actions/.github/workflows/python-ci.yml@v1.1.0
+    with:
+      runs-on: ${{ vars.CI_RUNS_ON || '"ubuntu-slim"' }}
+      installer: uv
+      python-version: "3.13"
+      lint-command: >-
+        python -c "import json; json.load(open('custom_components/orion_sleep/manifest.json')); json.load(open('hacs.json'))"
+        && python -m py_compile custom_components/orion_sleep/*.py
+        && python -c "import orion_info"
+      test-command: pytest
